@@ -1,0 +1,21 @@
+node_modules/
+.env
+.env.*
+!.env.example
+workspace/*
+!workspace/.gitkeep
+*.log
+.DS_Store
+
+# Local Claude Code project overrides (not shared, machine-specific)
+.claude/settings.local.json
+
+# Auto-generated state from globally-enabled Claude Code plugins (ruflo/claude-flow),
+# not part of this project -- written the moment any claude session opens this dir.
+.claude-flow/
+.claude/proven-config.json
+.claude/.proven-config-version
+
+# Portable per-target-project memory the plugin writes when installed elsewhere
+# (irrelevant in this repo, listed for documentation).
+.devagent/

@@ -1,0 +1,16 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "dev-agent",
+  "description": "Marketplace for the dev-agent plugin -- an autonomous research/implement/test/review development workflow.",
+  "owner": {
+    "name": "Surjal"
+  },
+  "plugins": [
+    {
+      "name": "dev-agent",
+      "description": "Autonomous AI developer agent with architect/researcher/ux-designer/developer/frontend-developer/tester/reviewer subagents and /analyze, /implement, /test, /review commands. Framework-agnostic.",
+      "source": "./",
+      "category": "development"
+    }
+  ]
+}
