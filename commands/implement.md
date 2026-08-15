@@ -168,17 +168,40 @@ the resume algorithm: `docs/deep-execution.md`. Summary:
 ```
 .devagent/
 ├── state.json     # small machine-readable checkpoint: stage, completed/skipped stages, status
-├── plan.md        # the approved plan this execution is working from (written once, early)
+├── plan.md        # short approved-scope summary + pointer into handoffs/ (written once, early)
 ├── progress.md    # append-only human-readable log, one entry per stage transition
 ├── decisions.md   # engineering decisions made *during this execution* and why (this run's scratch,
 │                  #  not the same as Obsidian's cross-project brain/Key Decisions.md)
-└── failures.md    # meaningful failures: stage, problem, evidence, root cause, fix, verification
+├── failures.md    # meaningful failures: stage, problem, evidence, root cause, fix, verification
+└── handoffs/      # ephemeral inter-agent handoff files for THIS execution only (see below)
+    ├── research.md      # dev-agent:researcher's full discovery + implementation plan, verbatim
+    └── architecture.md  # dev-agent:architect's full specification, verbatim (only if architect ran)
 ```
+
+**`handoffs/` — file-based agent handoffs.** When `researcher` (and, if in scope, `architect`) is
+dispatched, write its full returned report **verbatim** to the matching file under
+`.devagent/handoffs/` immediately after it returns — via the ordinary `Write` tool (same boundary
+hook as everything else), not by manually retyping or paraphrasing the content. `dev-agent:researcher`
+and `dev-agent:architect` are deliberately read-only agents (no `Edit`/`Write` in their `tools:`
+frontmatter) — that's a load-bearing safety property, not an oversight, so it is the orchestrator
+that persists their output, not the subagent itself. This is a transport optimization only: the next
+stage (`architect`, then `developer`) is handed a short pointer to the relevant file(s) instead of
+having the orchestrator re-compose the full prior output inline into a large prompt — full
+information fidelity is preserved (the file has the complete report, nothing trimmed), only the
+*prompt-composition* cost is cut. `handoffs/` is purely ephemeral execution state, scoped to this one
+execution — it is never read by, written to, or referenced from the Obsidian protocol
+(`docs/obsidian-memory.md`); see `docs/deep-execution.md` → `.devagent/decisions.md` vs. Obsidian's
+`Key Decisions.md` for the same execution-local-vs-cross-project distinction applied here. Not
+created at all for a Trivial-tier task (no `researcher`, no `architect`, nothing to hand off).
 
 - Update `state.json` at every stage transition (entering a stage, completing it, or explicitly
   skipping it) — not only at the very end. This is what makes an interrupted run resumable.
 - Append to `progress.md` at the same points, in prose — this is the primary thing a resumed session
   reads to understand what actually happened, not just what state.json's few fields can encode.
+- `plan.md` is a **short** approved-scope summary (task, tier, a one-line pointer to the relevant
+  file(s) under `handoffs/`) — not a second full copy of the researcher's plan or the architect's
+  spec. The complete content lives in `handoffs/`; `plan.md` exists so a human skimming `.devagent/`
+  gets the gist without opening the larger handoff files.
 - Append to `decisions.md` only for a genuine engineering decision with more than one reasonable
   option (e.g. "reused the existing `<DataTable>` component instead of building a new paginated
   list, because the project already has one and the ux-designer's spec didn't require a different
@@ -224,7 +247,15 @@ the resume algorithm: `docs/deep-execution.md`. Summary:
    done but the repo doesn't show it, or vice versa — trust what's actually on disk, correct
    `state.json` to match reality, and note the discrepancy in `progress.md` before continuing. Do
    not blindly resume into a later stage than the evidence supports.
-7. Continue execution from the real current stage, running the normal stage logic below exactly as
+7. **Handoff files get the same "verify, don't blindly trust" treatment**: if `state.json` claims
+   `research`/`architecture` completed and the matching file under `.devagent/handoffs/` exists,
+   reuse it (that's the whole point — don't re-dispatch `researcher`/`architect` just because this is
+   a resume). But if `state.json` claims a stage completed and its handoff file is **missing**, that
+   is itself a stale/incomplete-state signal exactly like a claimed-but-missing implementation file —
+   don't blindly proceed past it; regenerate only that missing stage (re-dispatch the one agent whose
+   handoff is absent), not the whole pipeline. The repository (including `.devagent/handoffs/` itself)
+   remains authoritative over `state.json`'s claims, same principle as step 6.
+8. Continue execution from the real current stage, running the normal stage logic below exactly as
    if you'd reached it in a single continuous run — the numbered stages and their loop-on-failure
    behavior don't change based on whether this is a fresh run or a resume.
 
@@ -386,33 +417,71 @@ Establish Target project boundary above first, with `Status: VERIFIED`, before s
    SKIPPED — Trivial tier.` and `state.json`'s `skippedStages` includes `history` (see Stage
    selection → Trivial-task tier for the escalation rule: if this task later escalates past
    Trivial, perform this read at that point, don't carry the skip forward).
-4. **If Trivial**: skip straight to step 7 — no `researcher`, no `architect`, no `ux-designer`. Write
-   the task description itself to `plan.md` as the approved scope (there is no separate research
-   plan to append).
-   **Otherwise**: delegate to `dev-agent:researcher` for Stage 2 (Research & discovery — one call,
-   covering both project discovery and the Implementation Plan; see the note under Execution stages
-   above — never dispatch `dev-agent:researcher` a second time for the same task). Understand the
-   request against what was actually found, not what the user assumed their own stack was.
-   Append/update `plan.md` with its Implementation Plan. If the plan looks risky or ambiguous,
-   surface that to the user before proceeding rather than guessing.
-5. If `architect` is in scope: delegate to `dev-agent:architect`, handing it the researcher's
-   discovery findings and Implementation Plan as authoritative working context. Per its own rules
-   (`agents/architect.md`), it should validate specific claims or investigate genuine gaps, not
-   repeat the researcher's whole pass — expect it to report explicitly if the handoff was missing,
-   contradictory, or insufficient rather than silently redoing the investigation. Hand its full
-   specification to every later stage instead of re-summarizing it yourself. If any `Open Questions`
-   in its output are genuinely business-critical, ask the user before proceeding; otherwise proceed.
-6. If `ux-designer` is in scope: delegate to `dev-agent:ux-designer` with the architect's spec (or
-   a description of the requested UI change if there's no architect stage this time). Carry its
-   design system forward to `frontend-developer`.
-7. If backend/general implementation is needed: delegate to `dev-agent:developer`, handing it the
-   plan (and architect spec, if any) verbatim — for a Trivial task, this plan is just the task
-   description from step 4.
-8. If frontend implementation is needed: delegate to `dev-agent:frontend-developer`, handing it the
-   plan, the architect spec (if any), and the ux-designer's design system (if any). If Playwright is
-   `available` per capability detection, it also writes the Playwright test files for the UI it
-   builds (its own convention if the project has one already) — `dev-agent:visual-qa` runs them
-   later, it doesn't author them.
+4. **If Trivial**: skip straight to step 7 — no `researcher`, no `architect`, no `ux-designer`, no
+   `handoffs/` directory. Write the task description itself to `plan.md` as the approved scope
+   (there is no separate research plan to append, nothing to hand off).
+   **Otherwise**, both `researcher` and (if in scope) `architect` run, but the *order* between them
+   depends on which Stage selection row matched. Both orders below are valid and expected — pick the
+   one matching the row selected in step 2, don't default to Case A when the task actually matched
+   the "Full application" row:
+
+   **Case A — `researcher` runs before `architect`** (the default order — every Stage selection row
+   except "Full application"): delegate to `dev-agent:researcher` for Stage 2 (Research & discovery —
+   one call, covering both project discovery and the Implementation Plan; see the note under
+   Execution stages above — never dispatch `dev-agent:researcher` a second time for the same task).
+   When it returns, write its full report **verbatim** to `.devagent/handoffs/research.md` (a single
+   `Write` call — don't retype or summarize it into your own prose). Update `plan.md` with a short
+   pointer (task, tier, "full plan: `.devagent/handoffs/research.md`") rather than a second full copy.
+   If the plan looks risky or ambiguous, surface that to the user before proceeding rather than
+   guessing. Then, if `architect` is in scope: delegate to `dev-agent:architect` with a **concise**
+   prompt — the task description plus a pointer to `.devagent/handoffs/research.md` (e.g. "the
+   researcher's full discovery + implementation plan is at `.devagent/handoffs/research.md` — read
+   it, treat it as authoritative working context per your standing rule; do not duplicate its
+   investigation") — do not manually re-compose or re-embed researcher's findings as prose inline in
+   the dispatch prompt; architect has Read access and reads the file itself. Per its own rules
+   (`agents/architect.md`), it should validate specific claims or investigate genuine gaps against the
+   actual repo, not repeat the researcher's whole pass — expect it to report explicitly if the handoff
+   was missing, contradictory, or insufficient rather than silently redoing the investigation. When it
+   returns, write its full specification **verbatim** to `.devagent/handoffs/architecture.md` (same
+   pattern as research.md above). If any `Open Questions` in its output are genuinely
+   business-critical, ask the user before proceeding; otherwise proceed.
+
+   **Case B — `architect` runs before `researcher`** ("Full application" row in Stage selection —
+   new project or a feature big enough to need a real spec before investigation): delegate to
+   `dev-agent:architect` first, with the task description only — `.devagent/handoffs/research.md`
+   does not exist yet at this point, and the dispatch prompt must not claim otherwise. Per its own
+   rules (`agents/architect.md`), architect must not wait for, fabricate, or assume the contents of a
+   research handoff that was never produced — it investigates the actual repository directly, to the
+   extent its architecture task requires, exactly as if invoked standalone. When it returns, write its
+   full specification **verbatim** to `.devagent/handoffs/architecture.md`. If any `Open Questions` in
+   its output are genuinely business-critical, ask the user before proceeding. Then delegate to
+   `dev-agent:researcher` with a pointer to `.devagent/handoffs/architecture.md` (e.g. "the architect's
+   full specification is at `.devagent/handoffs/architecture.md` — read it, treat it as upstream
+   architectural context"). Per its own rules (`agents/researcher.md`), researcher reads that spec,
+   does not silently overwrite or contradict its architectural decisions, and — if what it actually
+   finds in the repository conflicts with the spec — reports that conflict explicitly in its output
+   rather than quietly overriding one or the other. When it returns, write its full report **verbatim**
+   to `.devagent/handoffs/research.md` (same pattern as above). If researcher reported a conflict with
+   `architecture.md`, surface it to the user before proceeding rather than picking a side silently.
+6. If `ux-designer` is in scope: delegate to `dev-agent:ux-designer` with a pointer to
+   `.devagent/handoffs/architecture.md` (or a description of the requested UI change if there's no
+   architect stage this time) — same "point at the file, don't re-embed" pattern as step 5. Carry its
+   design system forward to `frontend-developer` (ux-designer's own report is small enough, and
+   consumed by only one next stage, that a `handoffs/` file isn't needed for it specifically).
+7. If backend/general implementation is needed: delegate to `dev-agent:developer` with a **concise**
+   prompt: the specific task/outcome required, a pointer to `.devagent/handoffs/research.md` and
+   `.devagent/handoffs/architecture.md` (whichever exist this run), and the standing instruction to
+   read them itself, independently verify against the current repository before editing, and escalate
+   (stop and report, per its own rule) if a handoff conflicts with what it actually finds on disk —
+   never manually reproduce the full research/architecture content inline in this prompt. For a
+   Trivial task there are no handoff files; the prompt is just the task description from step 4,
+   unchanged from before.
+8. If frontend implementation is needed: delegate to `dev-agent:frontend-developer` with the same
+   concise, pointer-based prompt shape as step 7 (task/outcome + pointers to whichever of
+   `research.md`/`architecture.md` exist + the ux-designer's design system, which is handed inline
+   since it's only consumed here). If Playwright is `available` per capability detection, it also
+   writes the Playwright test files for the UI it builds (its own convention if the project has one
+   already) — `dev-agent:visual-qa` runs them later, it doesn't author them.
 9. Delegate validation to `dev-agent:tester` — always, on every tier including Trivial. Hand it
    whatever test/build/lint command(s) `dev-agent:developer` (or `dev-agent:frontend-developer`)
    already reported running in its own output, as a hint — per `agents/tester.md`, it still
@@ -438,7 +507,10 @@ Establish Target project boundary above first, with `Status: VERIFIED`, before s
 12. Once `tester` is PASS (and `visual-qa` is PASS or was never in scope), delegate to
     `dev-agent:reviewer` — always, on every tier including Trivial — which produces Security,
     Performance, and an overall verdict in one pass (see Execution stages above — stages 10-12 are
-    one `Agent` tool call, not three).
+    one `Agent` tool call, not three). If `.devagent/handoffs/architecture.md` exists, mention its
+    path as available context for judging architecture fit — reviewer still reads the actual source
+    itself (its independence is unaffected either way), this only saves it from having to infer the
+    intended design from the diff alone when a real spec exists to compare against.
 13. If the reviewer's verdict is CHANGES REQUIRED, or its Security/Performance findings flag
     anything blocking: send the specific issues back to whichever implementer owns them, then
     re-run `dev-agent:tester` (and `dev-agent:visual-qa`, if it was in scope) and `dev-agent:reviewer`

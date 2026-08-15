@@ -157,6 +157,16 @@ beyond this one task get promoted there, at stage 14/16 (Obsidian wrap-up). Most
 decisions never make that cut, and that's correct — not every choice made while building one feature
 is a lesson worth remembering six months from now on a different project.
 
+`.devagent/handoffs/` (`research.md`, `architecture.md` — see `commands/implement.md` → Persistent
+execution state) is the same kind of execution-local scratch as `.devagent/decisions.md`, one level
+further removed from Obsidian: it's not even promotion-eligible. It exists purely so one subagent's
+full output reaches the next subagent without the orchestrator re-typing it into a prompt — nothing
+in it is a "decision" or a "gotcha," it's raw investigation/spec output, and none of it is ever read
+by, written to, or referenced from the Obsidian read/write steps. If something in a handoff file
+turns out to be a genuinely reusable pattern or decision, that judgment call happens the same way it
+always has — via `.devagent/decisions.md` → `Key Decisions.md` promotion — not by pointing Obsidian
+at the handoff file directly.
+
 ### Not gitignored automatically
 
 `.devagent/` is ordinary project content once created — dev-agent does not edit the target project's

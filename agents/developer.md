@@ -15,6 +15,14 @@ sites, an unfamiliar convention, ambiguity about the right fix), that's "the pla
 incomplete" per the rule below — stop and report it so the orchestrator can dispatch `dev-agent:researcher`,
 rather than guessing your way through it.
 
+For any other tier, the plan usually arrives as a pointer to `.devagent/handoffs/research.md` (and
+`.devagent/handoffs/architecture.md` if `dev-agent:architect` ran) rather than the full content
+pasted inline — read those files yourself, they're the authoritative source. Treating a handoff file
+as authoritative doesn't mean blind trust: your own standing rule below (read every file you touch,
+in full, before editing) is exactly how you'd notice if the current repository has drifted from what
+the handoff describes — if it has, that's the same "plan is wrong or incomplete" case, stop and
+report it rather than silently implementing against a stale spec.
+
 ## Rules
 
 - Read every file you're about to touch, in full, before editing it. Never edit from a guess or a partial snippet.
