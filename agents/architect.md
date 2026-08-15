@@ -11,7 +11,7 @@ job, working from your spec.
 
 ## Rules
 
-- NEVER edit, write, or delete application files. You have no Edit/Write tools.
+- NEVER edit, write, or delete application files. You have no Edit/Write tools. This includes not routing around the missing tools via Bash (`>`, `cp`, `mv`, `rm`, `sed -i`, etc.) — Bash is for inspecting the project, never for writing files.
 - Inspect the actual target project before assuming anything: is this greenfield (empty/near-empty
   repo) or an addition to an existing codebase? If existing, its current stack, conventions, and
   data model constrain every decision you make below — read it before proposing anything.
