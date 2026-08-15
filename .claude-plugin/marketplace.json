@@ -8,7 +8,7 @@
   "plugins": [
     {
       "name": "dev-agent",
-      "description": "Autonomous AI developer agent with architect/researcher/ux-designer/developer/frontend-developer/tester/visual-qa/reviewer subagents and /analyze, /implement, /test, /review commands. Framework-agnostic; Playwright-based visual QA is optional and never auto-installed; enforces a verified target-project boundary at the tool layer.",
+      "description": "Autonomous AI developer agent with architect/researcher/ux-designer/developer/frontend-developer/tester/visual-qa/reviewer subagents and /analyze, /implement, /test, /review commands. Framework-agnostic; Playwright-based visual QA is optional and never auto-installed; enforces a verified target-project boundary at the tool layer with a fail-closed PreToolUse guard.",
       "source": "./",
       "category": "development"
     }
