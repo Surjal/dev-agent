@@ -1,5 +1,10 @@
 # dev-agent
 
+[![Version](https://img.shields.io/badge/version-1.4.1-blue)](.claude-plugin/plugin.json)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![Claude Code plugin](https://img.shields.io/badge/Claude%20Code-plugin-5A67D8)](https://docs.claude.com/en/docs/claude-code)
+[![OpenCode port](https://img.shields.io/badge/OpenCode-experimental%20port-orange)](docs/opencode-port.md)
+
 A reusable Claude Code **plugin**: a deep, autonomous AI developer agent. Every `/implement` run
 follows the same 15-stage lifecycle by default (Deep Mode — there is no separate fast mode; see
 `docs/deep-execution.md`) — target verification, project discovery, Obsidian history, architecture/
