@@ -47,6 +47,15 @@ products), surface the ambiguity to the user and ask which name to use, rather t
 
 ## Read step (start of `/implement` and `/analyze`)
 
+**Skipped for Trivial-tier tasks** (see `commands/implement.md` → Stage selection → Trivial-task
+tier): a task that meets the Trivial criteria is, by definition, unlikely to intersect an unfamiliar
+convention or a relevant past gotcha, so this read is skipped outright rather than performed and
+then likely discarded — recorded explicitly (`progress.md`: `Obsidian historical context: SKIPPED —
+Trivial tier.`), never silently omitted. If a Trivial task later escalates to a larger tier mid-run,
+this read is performed at that point — the initial skip is never carried forward past a tier
+escalation. Medium and Large tiers are unaffected; this read runs normally for both, exactly as
+below.
+
 If `<vault root>\work\active\<ProjectName>.md` exists, read it — especially `## Active Work` and
 recent `## Session Log` entries. If any of the three brain files exist, search them for entries
 tagged `[[<ProjectName>]]` or otherwise relevant to the current task (e.g. searching Patterns.md

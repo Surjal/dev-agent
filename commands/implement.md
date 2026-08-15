@@ -235,6 +235,7 @@ transcript:
 
 ```
 [3/15] Historical context — reading D:\obsidian\work\active\<ProjectName>.md
+[3/15] Historical context — SKIPPED (Trivial tier)
 [5/15] UX / product design — SKIPPED (no UI in scope)
 [8/15] Testing — FAIL, retrying (attempt 2)
 ```
@@ -333,6 +334,18 @@ sites, an unfamiliar convention, ambiguity about the right fix), `developer` mus
 back rather than guess; the orchestrator then dispatches `researcher` before continuing — the same
 escalation path used when a skipped `architect` turns out to have been needed after all.
 
+**Obsidian historical context is also skipped for Trivial tier** (Stage 3 — see Steps below), for
+the same reason `researcher` is: a task that's genuinely Trivial by the criteria above is, by
+definition, unlikely to intersect an unfamiliar convention or a relevant past gotcha, and the vault
+read is never authoritative anyway (`docs/obsidian-memory.md` — historical context, never current
+truth). Record the skip explicitly — `progress.md` gets the line `Obsidian historical context:
+SKIPPED — Trivial tier.` and `state.json`'s `skippedStages` includes `history` — never silently
+omitted. **If a Trivial task escalates mid-run** (the `developer`-triggered escalation above, or a
+`tester`/`reviewer` loop that reveals the task wasn't as simple as assumed — see Iteration below),
+the orchestrator must perform the Obsidian read at that point, before continuing with `researcher`
+— don't let the earlier Trivial-tier skip carry forward into a task that turned out to need the full
+core. Never treat the initial skip as a permanent decision once the tier assessment itself changes.
+
 If genuinely unsure whether a request is "small feature" or "big enough to need architect", lean
 towards the smaller path — the cost of skipping architect on something that turns out to need it is
 that `researcher`/`developer` surface the gap during their own work and you can escalate mid-task;
@@ -357,19 +370,23 @@ continue?" between ordinary stages — only stop for a decision that genuinely r
 Establish Target project boundary above first, with `Status: VERIFIED`, before step 0. If
 `$ARGUMENTS` requested `--resume`, follow Resume above instead of starting here.
 
-0. Ensure `.devagent/` exists (Persistent execution state above). Determine `<ProjectName>` and
-   check the user's Obsidian vault for relevant historical context
-   (`D:\obsidian\work\active\<ProjectName>.md` and the three `D:\obsidian\brain\*.md` files) —
-   see `docs/obsidian-memory.md` for the exact project-detection algorithm, paths, and how to
-   weigh historical notes against current codebase evidence. Skip silently if the vault or those
-   specific files aren't reachable. Treat everything found as historical context, never current
-   truth — the current source is always authoritative (see Historical context vs. current truth in
-   `docs/deep-execution.md`).
+0. Ensure `.devagent/` exists (Persistent execution state above).
 1. Run Capability detection above and present the CAPABILITIES report.
 2. Apply Stage selection above against the actual request and the capabilities just detected —
    including whether the Trivial-task tier genuinely applies (see Stage selection → Trivial-task
    tier; when unsure, don't apply it). State which stages you're running and why, briefly.
-3. **If Trivial**: skip straight to step 6 — no `researcher`, no `architect`, no `ux-designer`. Write
+3. Determine `<ProjectName>` and, **unless Trivial tier applies**, check the user's Obsidian vault
+   for relevant historical context (`D:\obsidian\work\active\<ProjectName>.md` and the three
+   `D:\obsidian\brain\*.md` files) — see `docs/obsidian-memory.md` for the exact project-detection
+   algorithm, paths, and how to weigh historical notes against current codebase evidence. Skip
+   silently if the vault or those specific files aren't reachable. Treat everything found as
+   historical context, never current truth — the current source is always authoritative (see
+   Historical context vs. current truth in `docs/deep-execution.md`). **If Trivial tier applies**,
+   skip this read and record it explicitly — `progress.md` gets `Obsidian historical context:
+   SKIPPED — Trivial tier.` and `state.json`'s `skippedStages` includes `history` (see Stage
+   selection → Trivial-task tier for the escalation rule: if this task later escalates past
+   Trivial, perform this read at that point, don't carry the skip forward).
+4. **If Trivial**: skip straight to step 7 — no `researcher`, no `architect`, no `ux-designer`. Write
    the task description itself to `plan.md` as the approved scope (there is no separate research
    plan to append).
    **Otherwise**: delegate to `dev-agent:researcher` for Stage 2 (Research & discovery — one call,
@@ -378,23 +395,31 @@ Establish Target project boundary above first, with `Status: VERIFIED`, before s
    request against what was actually found, not what the user assumed their own stack was.
    Append/update `plan.md` with its Implementation Plan. If the plan looks risky or ambiguous,
    surface that to the user before proceeding rather than guessing.
-4. If `architect` is in scope: delegate to `dev-agent:architect`, handing it the researcher's
-   discovery findings as context so it isn't re-reading the repo from scratch. Hand its full
+5. If `architect` is in scope: delegate to `dev-agent:architect`, handing it the researcher's
+   discovery findings and Implementation Plan as authoritative working context. Per its own rules
+   (`agents/architect.md`), it should validate specific claims or investigate genuine gaps, not
+   repeat the researcher's whole pass — expect it to report explicitly if the handoff was missing,
+   contradictory, or insufficient rather than silently redoing the investigation. Hand its full
    specification to every later stage instead of re-summarizing it yourself. If any `Open Questions`
    in its output are genuinely business-critical, ask the user before proceeding; otherwise proceed.
-5. If `ux-designer` is in scope: delegate to `dev-agent:ux-designer` with the architect's spec (or
+6. If `ux-designer` is in scope: delegate to `dev-agent:ux-designer` with the architect's spec (or
    a description of the requested UI change if there's no architect stage this time). Carry its
    design system forward to `frontend-developer`.
-6. If backend/general implementation is needed: delegate to `dev-agent:developer`, handing it the
+7. If backend/general implementation is needed: delegate to `dev-agent:developer`, handing it the
    plan (and architect spec, if any) verbatim — for a Trivial task, this plan is just the task
-   description from step 3.
-7. If frontend implementation is needed: delegate to `dev-agent:frontend-developer`, handing it the
+   description from step 4.
+8. If frontend implementation is needed: delegate to `dev-agent:frontend-developer`, handing it the
    plan, the architect spec (if any), and the ux-designer's design system (if any). If Playwright is
    `available` per capability detection, it also writes the Playwright test files for the UI it
    builds (its own convention if the project has one already) — `dev-agent:visual-qa` runs them
    later, it doesn't author them.
-8. Delegate validation to `dev-agent:tester` — always, on every tier including Trivial.
-9. If the tester's verdict is FAIL: check `failures.md` for a matching prior entry from this
+9. Delegate validation to `dev-agent:tester` — always, on every tier including Trivial. Hand it
+   whatever test/build/lint command(s) `dev-agent:developer` (or `dev-agent:frontend-developer`)
+   already reported running in its own output, as a hint — per `agents/tester.md`, it still
+   independently executes the command(s) itself and inspects the diff itself; the hint only saves it
+   from rediscovering the project's validation tooling from scratch, it never substitutes for
+   `tester`'s own execution.
+10. If the tester's verdict is FAIL: check `failures.md` for a matching prior entry from this
     execution first, then send the failure output back to whichever of `dev-agent:developer` /
     `dev-agent:frontend-developer` owns the failing area to fix, then re-run `dev-agent:tester`.
     Repeat while genuine progress is being made and failures are actionable — there is no fixed
@@ -402,18 +427,19 @@ Establish Target project boundary above first, with `Status: VERIFIED`, before s
     credentials, ambiguous requirement, conflicting constraint) — in which case stop and ask the
     user. Log a meaningful failure to `failures.md` per Persistent execution state above. A FAIL on a
     Trivial task is itself evidence the task wasn't as trivial as assumed — consider escalating to
-    `dev-agent:researcher` before the next fix attempt rather than retrying blind.
-10. If `visual-qa` is in scope (UI in scope and Playwright available), delegate to
+    `dev-agent:researcher` (and performing the Obsidian read from step 3, per its escalation rule)
+    before the next fix attempt rather than retrying blind.
+11. If `visual-qa` is in scope (UI in scope and Playwright available), delegate to
     `dev-agent:visual-qa` once the tester reports PASS. If its `Overall Result` is FAIL: send its
     findings back to `dev-agent:frontend-developer` to fix, then re-run `dev-agent:tester` and
     `dev-agent:visual-qa` again (in that order) — the same failure-recovery loop as tester, just one
     stage further. Repeat until PASS or a genuine blocker. Never send known visual-qa failures
     straight to `reviewer` — the loop closes here first.
-11. Once `tester` is PASS (and `visual-qa` is PASS or was never in scope), delegate to
+12. Once `tester` is PASS (and `visual-qa` is PASS or was never in scope), delegate to
     `dev-agent:reviewer` — always, on every tier including Trivial — which produces Security,
     Performance, and an overall verdict in one pass (see Execution stages above — stages 10-12 are
     one `Agent` tool call, not three).
-12. If the reviewer's verdict is CHANGES REQUIRED, or its Security/Performance findings flag
+13. If the reviewer's verdict is CHANGES REQUIRED, or its Security/Performance findings flag
     anything blocking: send the specific issues back to whichever implementer owns them, then
     re-run `dev-agent:tester` (and `dev-agent:visual-qa`, if it was in scope) and `dev-agent:reviewer`
     again. Repeat until APPROVED (with no blocking security/performance findings) or a genuine
@@ -421,16 +447,17 @@ Establish Target project boundary above first, with `Status: VERIFIED`, before s
     still present), that's a signal to stop iterating blindly and re-enter Architecture/Research
     instead — see Iteration below (for a Trivial task with no `researcher` stage yet run, "re-enter
     Research" means dispatching it for the first time, not a second call).
-13. Run the Definition of Done gate below — always, on every tier including Trivial. A reviewer
+14. Run the Definition of Done gate below — always, on every tier including Trivial. A reviewer
     APPROVED is necessary but not sufficient — walk through every applicable category explicitly
     before declaring the task complete. Update `state.json`'s `status` to `complete` (Definition of
     Done passed) or `blocked` (a genuine blocker stopped things) — never leave it `in_progress` at
     the end of a session.
-14. Give the user a concise final report: what changed, what was tested, the review verdict, the
+15. Give the user a concise final report: what changed, what was tested, the review verdict, the
     Definition of Done result (including whether visual-qa ran, passed, or was skipped and why),
-    and any remaining concerns flagged as non-blocking. Never say "complete"/"done" unless the
-    Definition of Done gate actually passed — see No false completion in `docs/deep-execution.md`.
-    If a genuine blocker stopped things early, report `INCOMPLETE` and the exact blocking reason.
+    whether Obsidian historical context was read or skipped and why, and any remaining concerns
+    flagged as non-blocking. Never say "complete"/"done" unless the Definition of Done gate actually
+    passed — see No false completion in `docs/deep-execution.md`. If a genuine blocker stopped
+    things early, report `INCOMPLETE` and the exact blocking reason.
 16. Perform the Obsidian write step from `docs/obsidian-memory.md`: append a Session Log entry to
     `D:\obsidian\work\active\<ProjectName>.md`, update Active Work / Completed Milestones / Related,
     and — only if the session surfaced genuinely reusable knowledge — append to the relevant
@@ -439,17 +466,21 @@ Establish Target project boundary above first, with `Status: VERIFIED`, before s
     one-off bug — don't dump every browser-test result into the brain. Check first whether an
     entry for this session already exists (e.g. written by the existing `<obsidian-wrap-up>`
     PreCompact hook already) and extend rather than duplicate it. Never write secrets, credentials,
-    or tokens there. Skip silently if the vault isn't reachable. `.devagent/decisions.md` entries
-    that are genuinely reusable beyond this one execution are what should get promoted to
-    `Key Decisions.md` here — the two files serve different scopes (this run vs. cross-project).
+    or tokens there. Skip silently if the vault isn't reachable — including when step 3 skipped the
+    read for Trivial tier and the task never escalated, in which case there is no historical note to
+    reconcile against, only the ordinary "did this produce reusable knowledge" check. `.devagent/
+    decisions.md` entries that are genuinely reusable beyond this one execution are what should get
+    promoted to `Key Decisions.md` here — the two files serve different scopes (this run vs.
+    cross-project).
 
 ## Iteration
 
 There is no fixed "try N times and give up" limit — a serious implementation may legitimately need
 several fix/test cycles. Keep iterating on Testing/Visual QA/Review loops while genuine progress is
-visible and failures are actionable. **Stop iterating blindly** and re-enter Architecture/Research
-(stage 4/6) instead when repeated attempts hit the same root cause without resolving it — that's a
-signal the current approach, not the current diff, is wrong. Never mistake "still failing after
+visible and failures are actionable. **Stop iterating blindly** and re-enter Research/Architecture
+(stage 2/4 in Execution stages above) instead when repeated attempts hit the same root cause without
+resolving it — that's a signal the current approach, not the current diff, is wrong. Never mistake
+"still failing after
 several attempts" alone for a blocker — only stop for the user on a genuine blocker (missing
 credential, business-critical ambiguity, destructive-operation authorization, conflicting explicit
 requirements) as defined in `docs/deep-execution.md` → When to ask the user.
