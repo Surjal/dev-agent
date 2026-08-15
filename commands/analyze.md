@@ -2,7 +2,7 @@
 description: Investigate a task/bug read-only via the researcher agent, no code changes
 ---
 
-Use the `dev-agent:researcher` subagent (its exact Task `subagent_type`, not the bare word "researcher" — this plugin's agents are namespaced) to investigate the following request without modifying any files:
+Use the `dev-agent:researcher` subagent — call the `Agent` tool with `subagent_type: "dev-agent:researcher"` (not the bare word "researcher", and not the `Skill` tool — this plugin's agents are namespaced) — to investigate the following request without modifying any files:
 
 $ARGUMENTS
 
