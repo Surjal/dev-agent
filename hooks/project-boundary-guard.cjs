@@ -166,11 +166,29 @@ function resolveProjectRoot(cwdReal) {
 
 // Windows absolute (C:\...), POSIX absolute (/...), and relative traversal (../..., ..\...).
 // A bare relative token with no ".." always resolves under cwd by construction.
+// Excludes "(" and ")" from token characters: they're shell metacharacters (command substitution
+// $(...), grouping), never legitimately part of a bare path -- without this exclusion, a path
+// immediately followed by a closing paren (e.g. "$(cmd 2>/dev/null)") swallows the ")" into the
+// matched token, which then fails an exact-match check like NULL_DEVICE_RE below. Found live in
+// v1.4.0/v1.4.1 testing: a completely benign `$(git rev-parse ... 2>/dev/null)` was falsely blocked
+// because the matched token was "/dev/null)", not "/dev/null".
 const PATH_TOKEN_RE =
-  /(?:[A-Za-z]:[\\/][^\s"'|&;<>]+|(?<![\w./])\/(?:[^\s"'|&;<>/]+\/?)+|(?:\.\.[\\/])+[^\s"'|&;<>]*)/g;
+  /(?:[A-Za-z]:[\\/][^\s"'|&;<>()]+|(?<![\w./])\/(?:[^\s"'|&;<>/()]+\/?)+|(?:\.\.[\\/])+[^\s"'|&;<>()]*)/g;
 const MUTATING_RE =
   /(>{1,2}(?!\s*&)|(?:^|[;&|]\s*)(cp|mv|rm|rmdir|del|rd|mkdir|touch|tee|sed\s+-i|perl\s+-i|git\s+(add|commit|checkout|reset|clean|apply|rm|mv)|npm\s+(install|uninstall|init|ci)|pnpm\s+(add|remove|install)|yarn\s+(add|remove)|pip\s+install|dd\s)\b)/i;
 const CD_RE = /(?:^|[;&|]\s*)cd\s+(?:['"]?)([^\s'";&|]+)/gi;
+
+// The OS null/stream devices are not project files under any definition -- a write to /dev/null
+// discards the data, it never touches a filesystem path this guard needs to protect. Matched on
+// the raw token text (never resolved via path.resolve/realpath first): Windows resolves a leading
+// "/" as "root of the current drive", so "/dev/null" would otherwise resolve to "D:\dev\null" and
+// be flagged as outside the project -- a real false positive found live in v1.4.0 testing, where
+// the extremely common `command > /dev/null 2>&1` pattern blocked an entirely legitimate command.
+const NULL_DEVICE_RE = /^(\/dev\/(null|stdout|stderr|zero|tty)|nul)$/i;
+
+function isNullDeviceToken(token) {
+  return NULL_DEVICE_RE.test(token.trim());
+}
 
 function checkBashCommand(command, cwdReal, root) {
   // An explicit cd outside the root is blocked outright: after it, later relative paths in the
@@ -179,6 +197,7 @@ function checkBashCommand(command, cwdReal, root) {
   CD_RE.lastIndex = 0;
   while ((m = CD_RE.exec(command))) {
     const target = m[1];
+    if (isNullDeviceToken(target)) continue;
     const resolved = realpathDeepest(path.resolve(cwdReal, target), false);
     if (!isVaultException(resolved) && !isInside(root, resolved)) {
       return `Command changes directory to '${target}' (resolves to '${resolved}'), which is outside the project root '${root}'.`;
@@ -189,6 +208,7 @@ function checkBashCommand(command, cwdReal, root) {
 
   const tokens = command.match(PATH_TOKEN_RE) || [];
   for (const token of tokens) {
+    if (isNullDeviceToken(token)) continue;
     // Non-strict: a heuristic token may not be a real path at all, and a filesystem error while
     // probing it must not turn a legitimate command into a false block. Normalization (which is
     // what defeats "..") has already happened via path.resolve.

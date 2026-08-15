@@ -71,7 +71,9 @@ scripts implement control flow.
 ## Orchestrator
 
 The orchestrating session's behavior is defined by `commands/implement.md` (invoked via
-`/implement`, or approximated when a development task is described in plain language). Responsibilities:
+`/implement`, or approximated when a development task is described in plain language) — this is
+"Deep Mode," the only mode; there is no separate fast path (see `docs/deep-execution.md` → Why no
+fast mode). Responsibilities:
 
 1. Check the target project's Obsidian vault note (and brain files) for anything relevant, if
    reachable (see Memory below).
@@ -190,7 +192,7 @@ this sub-item) doesn't apply and is skipped, not force-run.
 | `frontend-developer` | Read, Edit, Write, Grep, Glob, Bash | Yes | Implement the ux-designer's design system in the project's actual detected frontend stack |
 | `tester` | Read, Grep, Glob, Bash | No | Detect and run the project's real test/build/lint tooling, verdict PASS/FAIL |
 | `visual-qa` | Read, Grep, Glob, Bash | No | Run the project's existing Playwright tests, inspect screenshots/console/network evidence, check functional/visual/responsive/UX-state/accessibility behavior in a real browser. Only invoked when Playwright is available; never authors new test files |
-| `reviewer` | Read, Grep, Glob, Bash | No | Senior-engineer review: correctness, architecture, security, performance, maintainability, test coverage, verdict APPROVED/CHANGES REQUIRED |
+| `reviewer` | Read, Grep, Glob, Bash | No | Senior-engineer review: correctness, architecture, maintainability, test coverage, plus explicit `Security Verdict` and `Performance Verdict` (`PASS`/`FAIL`/`NOT APPLICABLE`, with evidence) — these back the Definition of Done's Security/Performance categories (v1.4.0) without a dedicated agent for either. Overall verdict APPROVED/CHANGES REQUIRED |
 
 Read-only agents have no `Edit`/`Write` tool at all — this is enforced by Claude Code's
 per-subagent tool allowlist, not by prompt instruction alone, and this scoping travels with the
@@ -232,29 +234,24 @@ told not to touch out-of-scope files. Full design, exact guarantees, and honest 
 is not a filesystem sandbox, and the Bash check is heuristic, not a shell parser):
 `docs/project-boundary.md`.
 
-## Persistent execution context (schema designed, not implemented)
+## Persistent execution state and resume (v1.4.0)
 
-For a future resume capability (v1.4+): a small JSON state file, written **inside the target
-project** (never a global/plugin directory — an execution state file describing project X belongs
-with project X), recording:
+`.devagent/` — `state.json`, `plan.md`, `progress.md`, `decisions.md`, `failures.md` — written
+**inside the target project** (never a global/plugin directory — execution state describing project
+X belongs with project X, same reasoning as keeping the Obsidian vault separate). Created at
+`/implement` step 0, subject to the exact same `hooks/project-boundary-guard.cjs` boundary check as
+any other file dev-agent touches. Full schema, write timing, and the `/implement --resume`
+algorithm: `docs/deep-execution.md`.
 
-```json
-{
-  "projectRoot": "D:\\projects\\my-app",
-  "gitRoot": "D:\\projects\\my-app",
-  "currentStage": "developer",
-  "status": "in_progress",
-  "completedStages": ["architect", "researcher", "ux-designer"],
-  "nextStage": "tester",
-  "iterationCount": 2
-}
-```
-
-This is a schema sketch for a later version, not wired into `/implement` this turn — no read/write
-of this file happens yet. When implemented, it would let a long-running `/implement` survive an
-interrupted session by re-reading where it left off, still inside the same verified project
-boundary (the file's own location, inside the project, is itself covered by the same boundary
-check).
+The load-bearing design decision: **`state.json` is a hint, the repository is authoritative.**
+Resume never trusts a recorded stage/status at face value — it re-verifies the target boundary from
+scratch (same as any fresh `/implement` run), cross-checks `state.json`'s recorded `targetRoot`/
+`gitRoot` against what was just verified (a mismatch means the state file is stale/from a different
+checkout and is not resumed from), then inspects the actual repository to confirm a claimed-complete
+stage really is — correcting `state.json` to match reality rather than resuming into a stage the
+evidence doesn't support. This is the same "verify against the real thing, never trust a claim"
+principle that governs the tool-layer boundary guard itself, applied to a second kind of claim
+(project identity there; execution progress here).
 
 ## Memory
 
@@ -326,15 +323,19 @@ Enforced at four layers, two of which travel with the plugin and two of which do
    target project's permission configuration — that would mean one plugin dictating another
    project's security policy, which Claude Code's model correctly doesn't allow. This repo's own
    `.claude/settings.json` only governs sessions developing *this* plugin.
-3. **Hook layer, travels with the plugin (new in v1.3.0)**: `hooks/project-boundary-guard.cjs`, a
-   `PreToolUse` hook matched on `Edit|Write|Bash`, blocks any call whose resolved target path falls
+3. **Hook layer, travels with the plugin (v1.3.0; fail-closed since v1.3.1)**:
+   `hooks/project-boundary-guard.cjs`, a `PreToolUse` hook matched on
+   `Edit|Write|NotebookEdit|MultiEdit|Bash`, blocks any call whose resolved target path falls
    outside the session's actual, verified project root — independent of what any agent believes the
    project is. This is the layer that closes the gap the v1.2.0 incident exposed: layers 1, 2, and
    4 all existed before that incident and didn't prevent it (a cross-*project* write is a different
    agent operating on a different absolute path — the target project's own deny rules for its own
-   tree don't help identify or block writes to a completely different project). See Target project
-   boundary above and `docs/project-boundary.md` for exactly what this does and doesn't guarantee —
-   it is not a filesystem sandbox, and its Bash coverage is a best-effort heuristic, not a parser.
+   tree don't help identify or block writes to a completely different project). As of v1.3.1, any
+   condition the guard cannot positively verify (malformed input, an unresolvable path, an internal
+   exception) denies the call rather than allowing it — v1.3.0 failed open on these. See Target
+   project boundary above and `docs/project-boundary.md` for exactly what this does and doesn't
+   guarantee — it is not a filesystem sandbox, and its Bash coverage is a best-effort heuristic, not
+   a parser.
 4. **Prompt layer** (each agent's Rules section, `commands/*.md`): never expose secrets, never
    assume schema, never claim untested success, never hide failures, ask before destructive ops,
    prefer reversible changes.

@@ -32,15 +32,20 @@ v1.2.0 incident on its own.
 
 ### 2. Tool-layer enforcement (the new part — a real, native mechanism)
 
-`hooks/project-boundary-guard.cjs`, registered as a `PreToolUse` hook (matcher `Edit|Write|Bash`)
-in `hooks/hooks.json`, auto-discovered by Claude Code's plugin convention. This runs **before**
-every `Edit`, `Write`, and `Bash` tool call in the session, reads the tool's actual parameters
-(`file_path`, or the `command` string) plus the session's actual `cwd` (supplied by Claude Code
-itself, not derived from anything the model said), and can genuinely block the call — Claude Code
-honors a hook's `{"decision":"block","reason":"..."}` response before the tool executes at all.
-This is empirically verified, not assumed: see Test Results below, where a forced `Edit` on a
-sibling project's file produced a real `is_error:true` tool result with the hook's exact reason
-text, and the target file was independently confirmed byte-unchanged afterward.
+`hooks/project-boundary-guard.cjs`, registered as a `PreToolUse` hook (matcher
+`Edit|Write|NotebookEdit|MultiEdit|Bash`) in `hooks/hooks.json`, auto-discovered by Claude Code's
+plugin convention. This runs **before** every matched tool call in the session, reads the tool's
+actual parameters (`file_path`/`notebook_path`, or the `command` string) plus the session's actual
+`cwd` (supplied by Claude Code itself, not derived from anything the model said), and can genuinely
+block the call — Claude Code honors a hook's deny response before the tool executes at all. This is
+empirically verified against Claude Code 2.1.233, not assumed: a probe harness fed the running
+binary every outcome variant (plain exit 0, exit 1, an uncaught exception, exit 2, a
+`decision:"block"` JSON body, a `hookSpecificOutput.permissionDecision:"deny"` body, malformed
+JSON, exit 127) and recorded the actual filesystem effect and the actual tool result each produced
+— see Fail-Closed Implementation below for what that probe found. Live testing then reproduced a
+forced `Edit` (via a filesystem junction into a sibling project — see Test Results) which produced
+a real `is_error:true` tool result with the hook's exact reason text, with the target file
+independently confirmed byte/mtime-unchanged afterward.
 
 This is genuinely tool-layer, not just policy — it doesn't matter what the model believes the
 project is; it matters what the actual invocation's `cwd` was and what absolute path the tool call
@@ -51,15 +56,19 @@ root, not against anything the model was thinking.
 
 **What this layer does NOT guarantee:**
 - It is a Node.js script the harness invokes per tool call — it is not a filesystem-level
-  sandbox (no chroot, no OS-level permission wall). A sufficiently unusual tool call the hook
-  fails to parse, or an entirely different tool this hook doesn't match, is not covered.
+  sandbox (no chroot, no OS-level permission wall).
 - The `Bash` check is a best-effort heuristic over the command *text* (see Bash Safety below), not
   a shell-command interpreter. It catches the concrete patterns tested against (absolute paths,
   `../` traversal, `cd` to outside the root, combined with common mutating command names) — it
   does not parse or execute arbitrary shell syntax to determine true effects.
-- If the hook itself fails to read/parse its input, or can't determine a root at all, it **fails
-  open** (allows the call) rather than blocking everything — see Fail-Safe Behavior for why, and
-  what it means this layer does *not* cover.
+- **As of v1.3.1 the guard is fail-closed**, not fail-open: any condition it cannot positively
+  verify — malformed/missing input, an unresolvable `cwd`, an unresolvable target path, a tool
+  name it has no verification strategy for, or an internal exception — results in a deny, not an
+  allow. See Fail-Closed Implementation below for the full audit of error paths and live proof.
+- The matcher only routes tool names it lists. A file-mutating tool added to Claude Code that
+  isn't in that list would not reach this hook at all — this was a real, empirically found gap
+  (`NotebookEdit`, fixed in v1.3.1; see Fail-Closed Implementation), and the same class of gap
+  could recur if a future tool is added and this list isn't updated to match.
 
 ### 3. Filesystem-level protection (not provided by this plugin)
 
@@ -99,10 +108,19 @@ The `+ '/'` is what prevents the prefix-attack class the task specifically calle
 start with `"project-a/"` — the character after `project-a` in the target is `b`, not a separator.
 Verified directly (`hooks/project-boundary-guard.cjs` unit test T3, and live Test 4 below).
 
-Relative paths (including `../` traversal) are resolved against the session's actual `cwd` via
-`path.resolve` before the containment check — resolving first, then checking, is what makes `../`
-traversal visible to the check rather than silently ignored (see Bash Safety; this exact gap was
-found and fixed during this implementation, not merely anticipated).
+All target paths — relative *and* absolute — are resolved via `path.resolve(cwd, target)` before
+the containment check, then symlink/junction-resolved via `fs.realpathSync` for the deepest part of
+the path that actually exists. Resolving unconditionally, not only for relative input, is what
+makes `../` traversal visible to the check rather than silently ignored, including when it's
+embedded inside an absolute path (`D:\proj-a\..\proj-b\file.js` is absolute, but still contains a
+traversal segment). **v1.3.0 only ran `path.resolve` on paths not already absolute** — an absolute
+path containing `..` was compared to the root as-is, unnormalized, so `..` never collapsed and the
+containment check could pass on a path that plainly wasn't inside the root. Found live during
+v1.3.1 hardening (a probe script fed exactly this shape and observed the unpatched code return
+`isInside = true`), fixed by resolving every path unconditionally, and covered by a dedicated unit
+test (`absolute path containing .. (v1.3.0 bypass)`) so it can't silently regress. The
+`fs.realpathSync` step additionally defeats a symlink/junction planted inside the project root that
+points outside it (verified live in Test 4 below via a Windows directory junction).
 
 ## Boundary rules — examples
 
@@ -132,6 +150,29 @@ Instead, the hook:
    `git add/commit/checkout/reset/clean/apply/rm/mv`, package-manager install/init commands, etc.)
    — a command that merely *reads* something outside the root (e.g. `cat ../other/file`) is not
    what this layer exists to stop, and flagging it would just be noise.
+
+**Path tokens exclude `(` and `)`** (added in v1.4.1, alongside the null-device exemption below):
+parentheses are shell metacharacters (command substitution `$(...)`, grouping), never legitimately
+part of a bare path. Found live during v1.4.0 resume testing: a completely benign `basename
+"$(git rev-parse --show-toplevel 2>/dev/null)"` was falsely blocked because the matched token was
+`/dev/null)` (the closing paren from the substitution got swallowed into the token), which then
+failed the null-device exemption's exact-match check below. Verified this doesn't create a bypass:
+a real outside path wrapped in `$(echo ...)` is still resolved and denied (unit test `excluding )
+from path tokens does not let a paren-adjacent outside path slip through`) — excluding `)` from the
+token's character class only ever truncates a match earlier, at the paren; a truncated absolute path
+prefix still resolves outside the root exactly the same as the full one would.
+
+**OS null/stream devices are exempt from the containment check** (`/dev/null`, `/dev/stdout`,
+`/dev/stderr`, `/dev/zero`, `/dev/tty`, Windows `NUL`), matched on the raw command token before any
+path resolution. Found live during v1.4.0 testing: `path.resolve` on Windows treats a leading `/` as
+"root of the current drive," so `npm test > /dev/null 2>&1` resolved to `D:\dev\null` and was flagged
+as outside the project — an extremely common, entirely harmless output-suppression pattern was
+being falsely blocked. A write to `/dev/null` discards the data; it is not a project file under any
+definition, so exempting it carries no boundary risk (unlike the Obsidian exception, which allows
+writes to real files outside the project — this exemption allows a construct that touches no
+filesystem path at all). Verified this doesn't create a bypass: a command combining a `/dev/null`
+redirect with a genuine out-of-root mutation in the same line is still denied (unit test `/dev/null
+exemption does not mask a real outside mutation in the same command`).
 
 **Explicitly not covered, stated plainly rather than glossed over**: a script (Python, Node, a
 shell script) invoked with no path literally visible in the Bash command line, but which internally
@@ -206,20 +247,58 @@ out-of-boundary attempts produce a block. This preserves dev-agent's core premis
 babysitting for a normal task) while adding a hard stop for the one class of action that shouldn't
 need human review to catch: a concrete path outside the project.
 
+## Fail-closed guarantee (v1.3.1)
+
+The guard's decision function has exactly three branches: `allow` (the operation is positively
+verified inside the root, or is a documented Obsidian exception), `denyViolation` (a resolved,
+concrete path is demonstrably outside the root), and `denyUnverified` (the guard could not
+positively establish either of the above). There is no code path that reaches neither `allow` nor
+one of the two deny branches: a top-level `try`, an `uncaughtException` handler, and a catch inside
+the stdin read all route to `denyUnverified` rather than letting the process exit 0 by default.
+Audited error paths, each with its own unit test in `hooks/test-boundary-guard.cjs`: unreadable
+stdin, empty stdin, invalid JSON, a JSON value that isn't an object, a missing/non-string
+`tool_name`, a tool name the guard has no verification strategy for, a missing/non-string `cwd`, a
+`cwd` that doesn't exist or isn't a directory, a missing/non-object `tool_input`, a missing/null
+target-path field, an unresolvable target path, a `Bash` payload with no command string, a failure
+inside the Bash heuristic itself, and an uncaught exception thrown anywhere in `main()`. Verified
+live as well, not just at the unit level: Test 12 temporarily made the real, installed hook throw
+unconditionally, ran a genuine legitimate in-project `Edit` through a live session, and confirmed
+the tool call was denied and the target file was left byte/mtime-identical — then the hook was
+restored and the full unit suite re-run clean.
+
+The one deliberate non-error path that is *not* a fail-closed case: if `git rev-parse` reports "not
+a repository," the root falls back to the session `cwd` itself. This is not a failure to verify —
+it is a narrower, strictly more restrictive root than a repo root would be, so it cannot cause an
+under-restriction and is treated as verified rather than unverified.
+
 ## Known limitations (stated plainly, not glossed over)
 
 - **Bash coverage is heuristic, not a parser.** See Bash Safety — obfuscated commands, scripts that
   write via internal logic with no path in the command line, and sufficiently unusual shell syntax
-  are not guaranteed to be caught.
-- **The hook fails open on internal error.** If it can't read/parse its stdin, or an unexpected
-  exception occurs, it allows the call rather than blocking every tool call in the session. This
-  is a deliberate tradeoff (a bug in a 150-line guard script must not make the entire plugin
-  unusable) — it means the guarantee is "blocks the concrete violations it successfully evaluates,"
-  not "never fails."
-- **Requires Node.js.** The hook is a `.cjs` script invoked via `node`. If Node isn't on `PATH` in
-  the environment running Claude Code, the hook command itself fails to execute — Claude Code's
-  own hook-execution behavior on a failed hook command determines what happens next; this plugin
-  does not additionally guard against that case.
+  are not guaranteed to be caught. This did not change in v1.3.1 and is not solvable by a
+  fail-closed policy: the guard can only deny what it can see in the command text.
+- **The hook fails closed on internal error (changed in v1.3.1 — previously failed open).** See
+  Fail-Closed Guarantee above. The tradeoff moved deliberately: an internal bug or an unusual
+  environment now denies a tool call that might have been legitimate, rather than silently
+  allowing one that might not have been. For an autonomous coding agent this is the correct
+  direction — a false block costs a retry or a manual step; a false allow can silently modify the
+  wrong project.
+- **A crashed *hook process* (not a thrown JS exception, but the process failing to even start —
+  e.g. Node missing from `PATH`, or the hook script file itself missing) is outside this script's
+  control.** Empirically verified against Claude Code 2.1.233: when the configured hook command
+  itself cannot run, Claude Code allows the tool call rather than blocking it — there is no code in
+  this repository that runs in that scenario, because the guard's own process never started. This
+  is a real remaining fail-open path and is called out explicitly rather than glossed over: the
+  fail-closed guarantee above covers every condition *inside* `project-boundary-guard.cjs`, not the
+  case where the hook command never executes at all. Practical mitigation: Node.js is a hard
+  prerequisite for this plugin (documented in README.md); if it disappears from `PATH` mid-session
+  the loss of enforcement is silent, so treat "Node available" as part of this plugin's safety
+  precondition, not just its functional one.
+- **The matcher list is a hardcoded set of tool names**, not a "match everything mutating" rule —
+  see Tool-Layer Enforcement above. `NotebookEdit`/`MultiEdit` were added in v1.3.1 after being
+  found live to bypass the v1.3.0 guard entirely (the matcher didn't list them, so the hook never
+  ran); a future Claude Code tool that mutates files under a name not in this list would have the
+  same gap until the matcher is updated.
 - **The vault-exception path is hardcoded to the documented default.** See Obsidian Exception above.
 - **This does not replace the policy layer.** Agents are still told not to touch out-of-scope
   files; the hook is a backstop for when that instruction alone isn't enough, verified to be

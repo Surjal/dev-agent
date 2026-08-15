@@ -1,13 +1,23 @@
 # dev-agent
 
-A reusable Claude Code **plugin**: an autonomous AI developer agent. For a bug fix or small change
-it runs Research → Implement → Test → Review, looping back to the developer on test failure or
-review rejection. For a new project or a major feature it can run the full One-Shot Project
-Builder pipeline — Architect → Research → UX Design → Implement (backend + frontend) → Test →
-**Visual QA (when available)** → Review — turning a high-level idea into a working, reviewed
-implementation with minimal back-and-forth. `/implement` picks which stages a given task actually
-needs, including whether real browser QA is even possible in the current environment; see Stage
-selection in `commands/implement.md`.
+A reusable Claude Code **plugin**: a deep, autonomous AI developer agent. Every `/implement` run
+follows the same 15-stage lifecycle by default (Deep Mode — there is no separate fast mode; see
+`docs/deep-execution.md`) — target verification, project discovery, Obsidian history, architecture/
+UX design when needed, research, implementation, testing, visual QA when available, security/
+performance/final review, an explicit Definition of Done, and an Obsidian write-back — looping back
+to the relevant agent on test failure or review rejection, with no fixed retry cap. A bug fix skips
+most of that pipeline explicitly (`SKIPPED — NOT APPLICABLE`, not silently omitted); a new project or
+major feature runs the full **One-Shot Project Builder** path — Architect → Research → UX Design →
+Implement (backend + frontend) → Test → **Visual QA (when available)** → Security/Performance/Final
+Review — turning a high-level idea into a working, reviewed implementation with minimal
+back-and-forth. `/implement` picks which stages a given task actually needs, including whether real
+browser QA is even possible in the current environment; see Stage selection in
+`commands/implement.md`.
+
+Execution state persists inside the target project (`.devagent/`), so a long-running `/implement`
+can survive an interruption — `/implement --resume` re-verifies the target boundary, cross-checks
+the recorded state against the real repository (never trusting the state file blindly), and
+continues from the actual current stage. See `docs/deep-execution.md`.
 
 Framework-agnostic — the `researcher` agent inspects the target project's own files (`package.json`,
 `composer.json`, `requirements.txt`, etc.) to detect its stack rather than assuming one. Verified
@@ -88,17 +98,21 @@ an install (see Capability detection below).
 ## Target project boundary
 
 v1.3.0 adds a `PreToolUse` hook (`hooks/project-boundary-guard.cjs`, auto-loaded via
-`hooks/hooks.json`) that runs before every `Edit`/`Write`/`Bash` tool call and blocks any that
-resolve outside the verified target project root — this closes a real incident found during v1.2.0
-testing, where a session working on a throwaway project instead modified a file in an unrelated
-real project.
+`hooks/hooks.json`) that runs before every `Edit`/`Write`/`NotebookEdit`/`MultiEdit`/`Bash` tool
+call and blocks any that resolve outside the verified target project root — this closes a real
+incident found during v1.2.0 testing, where a session working on a throwaway project instead
+modified a file in an unrelated real project.
 
 This is genuine tool-layer enforcement, not just an instruction: the hook reads the actual session
 `cwd` (supplied by Claude Code, not derived from what the model believes) and the tool call's
 actual resolved path, and can block the call outright before it executes. It correctly:
 
 - Blocks writes to a sibling project, a parent directory, or an unrelated tree.
-- Resolves `../` relative traversal before checking (not just literal absolute paths).
+- Resolves `../` relative traversal before checking — including `..` embedded inside an *absolute*
+  path (`D:\proj-a\..\proj-b\x`), a real gap found and fixed in v1.3.1 (v1.3.0 only normalized
+  relative input).
+- Resolves symlinks/junctions before checking, so a link planted inside the project root pointing
+  outside it doesn't defeat the containment check.
 - Does **not** get fooled by a `project-a` vs. `project-ab` string-prefix — true path containment,
   not `startsWith`.
 - Still works when a parent directory's own `CLAUDE.md` describes a different project (Claude
@@ -107,10 +121,14 @@ actual resolved path, and can block the call outright before it executes. It cor
   nothing else outside the project.
 
 **Read this honestly, not optimistically**: this is a best-effort heuristic for `Bash` (it scans
-command text for path-like tokens and mutating verbs — it does not parse/execute shell syntax), and
-it fails open (allows the call) if the hook itself can't read/parse its input, rather than blocking
-every tool call in the session over an internal bug. It is not a filesystem-level sandbox. Full
-design, exact guarantees, and known limitations: `docs/project-boundary.md`.
+command text for path-like tokens and mutating verbs — it does not parse/execute shell syntax). As
+of v1.3.1 the guard **fails closed**: anything it cannot positively verify — malformed input, an
+unresolvable path, an internal exception — denies the tool call rather than allowing it (v1.3.0
+failed open on these). The one condition still outside its control: if the hook *process itself*
+can't start (Node missing from `PATH`, etc.), Claude Code allows the tool call, since the guard
+never runs at all — Node is a hard prerequisite for this plugin's safety guarantee, not just its
+function. It is not a filesystem-level sandbox. Full design, exact guarantees, and known
+limitations: `docs/project-boundary.md`.
 
 ## Capability detection
 
@@ -171,7 +189,9 @@ when UI is in scope but Playwright isn't.
 | Command | Does |
 |---|---|
 | `/analyze <task>` | Investigation only, via `researcher`, no changes made |
-| `/implement <task>` | Runs whichever stages the task needs (bug fix → the original 4-stage loop; new project/major feature → the full architect→...→reviewer pipeline), retrying on test failure or review rejection |
+| `/implement <task>` | Deep Mode by default (see `docs/deep-execution.md`) — runs whichever of the 15 stages the task needs (bug fix → the original 4-stage loop; new project/major feature → the full architect→...→reviewer pipeline), retrying on test failure or review rejection, with no fixed retry cap |
+| `/implement --resume` | Re-verify the target boundary, read `.devagent/state.json`, cross-check it against the actual repository, and continue from the real current stage |
+| `/implement --deep <task>` | Same as plain `/implement` — accepted as a no-op for explicitness, since Deep Mode is always on |
 | `/test` | Run `tester` against the current working-tree changes |
 | `/review` | Run `reviewer` against the current working-tree changes |
 
@@ -310,7 +330,8 @@ descriptions can be made consistent.
 See `docs/architecture.md` for the full design: why this is built entirely on native Claude Code
 plugin/subagent/command mechanisms (no custom orchestration code), the safety model, the memory
 model, the capability-detection model, and planned extensions (GitHub integration, RAG, deployment
-agent).
+agent). See `docs/deep-execution.md` for Deep Mode, the 15-stage lifecycle, persistent execution
+state, and resume.
 
 ## Development
 
@@ -330,7 +351,8 @@ dev-agent/
 │   ├── architecture.md
 │   ├── obsidian-memory.md    # full Obsidian integration protocol
 │   ├── capabilities.md       # full capability-detection reference (Playwright, etc.)
-│   └── project-boundary.md   # full target-project-boundary reference
+│   ├── project-boundary.md   # full target-project-boundary reference
+│   └── deep-execution.md     # Deep Mode, stages, persistent state, resume, failure recovery
 ├── memory/                # notes about developing THIS plugin (not shipped)
 ├── workspace/sample-project/  # optional local dogfood fixture, gitignored
 └── .claude/settings.json  # permissions for sessions working ON this repo only
@@ -346,15 +368,14 @@ See `CLAUDE.md` for the rules that govern development of this repo specifically.
 
 ## Roadmap
 
+- [x] Persistent execution context / resume (v1.4.0) — `.devagent/` inside the target project
+      (`state.json`, `plan.md`, `progress.md`, `decisions.md`, `failures.md`); `/implement --resume`
+      re-verifies the boundary and cross-checks state against the actual repository rather than
+      trusting it. See `docs/deep-execution.md`.
 - [ ] A second browser-automation backend for `visual-qa` (e.g. Chrome DevTools MCP), for
       environments without Playwright but with a connected browser MCP server — the capability
       model already treats "Browser" as separate from "Playwright" specifically to allow this
       without redesigning `visual-qa` or `commands/implement.md`.
-- [ ] Persistent execution context / resume (v1.4) — a small state file (inside the target
-      project, never a global directory) recording project root, Git root, current stage, status,
-      completed stages, next stage, iteration count, so a long `/implement` run can resume after an
-      interruption. Schema designed in `docs/architecture.md` → Persistent execution context; not
-      implemented yet.
 - [ ] Semantic search over the Obsidian vault, if plain keyword search stops scaling (explicitly deferred for now)
 - [ ] RAG-based retrieval for large codebases the researcher can't fully read in one pass
 - [ ] GitHub integration subagent (PRs, issues) via an MCP server

@@ -27,6 +27,11 @@ for (const d of [ROOT, path.join(ROOT, 'src'), SIBLING, OUTSIDE]) fs.mkdirSync(d
 // correctly resolve the root to the home directory and every "outside" fixture would be inside it.
 spawnSync('git', ['init', '-q'], { cwd: ROOT });
 spawnSync('git', ['init', '-q'], { cwd: SIBLING });
+// OUTSIDE must also be its own repo for the wrong-cwd test below: without this, git would walk up
+// from OUTSIDE to the enclosing TMP/home-directory repo, which (since ROOT lives under the same
+// TMP) would legitimately widen the root to include ROOT -- a false failure of the test, not a
+// bypass of the guard (this is exactly the monorepo-widening behavior the guard is supposed to have).
+spawnSync('git', ['init', '-q'], { cwd: OUTSIDE });
 
 let pass = 0;
 let fail = 0;
@@ -75,6 +80,21 @@ check('bash non-mutating command', bash('npm test'), 'ALLOW');
 check('bash mutating inside root', bash('touch src/x.js'), 'ALLOW');
 check('bash redirect inside root', bash('echo hi > src/out.txt'), 'ALLOW');
 check('bash cd inside root', bash('cd src && npm test'), 'ALLOW');
+check('bash redirect to /dev/null (v1.4.0 false positive)', bash('npm test > /dev/null 2>&1'), 'ALLOW');
+check('bash redirect stderr to /dev/null', bash('npm test 2>/dev/null'), 'ALLOW');
+check('bash cd to /dev/null (nonsensical but must not crash/misresolve)', bash('cd /dev/null'), 'ALLOW');
+check('bash tee to /dev/null', bash('echo hi | tee /dev/null'), 'ALLOW');
+check('bash redirect to Windows NUL', bash('npm test > NUL 2>&1'), 'ALLOW');
+check(
+  '/dev/null inside command substitution with trailing paren (v1.4.1 false positive)',
+  bash('basename "$(git rev-parse --show-toplevel 2>/dev/null)"'),
+  'ALLOW'
+);
+check(
+  '/dev/null with trailing semicolon',
+  bash('npm test 2>/dev/null; echo done'),
+  'ALLOW'
+);
 
 console.log('\nout-of-bounds (must DENY):');
 check('edit absolute path outside', edit(path.join(OUTSIDE, 'f.txt')), 'DENY');
@@ -97,6 +117,16 @@ check('bash cp to outside via relative', bash('cp package.json ../outside/copy.j
 check('bash cp to outside via absolute', bash(`cp package.json ${OUTSIDE}\\copy.json`), 'DENY');
 check('bash redirect outside', bash(`echo pwned > ${OUTSIDE}\\pwned.txt`), 'DENY');
 check('bash cd outside', bash('cd ../outside && rm -rf .'), 'DENY');
+check(
+  '/dev/null exemption does not mask a real outside mutation in the same command',
+  bash(`cp package.json ${OUTSIDE}\\copy.json 2>/dev/null`),
+  'DENY'
+);
+check(
+  'excluding ) from path tokens does not let a paren-adjacent outside path slip through',
+  bash(`cp package.json $(echo ${OUTSIDE}\\evil.json)`),
+  'DENY'
+);
 
 console.log('\nobsidian exception:');
 check('obsidian work/active allowed', write('D:\\obsidian\\work\\active\\Proj.md'), 'ALLOW');
@@ -122,6 +152,28 @@ check('Bash with no command', { cwd: ROOT, tool_name: 'Bash', tool_input: {} }, 
 check('unknown tool reaching the guard', { cwd: ROOT, tool_name: 'FutureWriteTool', tool_input: {} }, 'DENY');
 check('NotebookEdit outside root', { cwd: ROOT, tool_name: 'NotebookEdit', tool_input: { notebook_path: path.join(OUTSIDE, 'n.ipynb') } }, 'DENY');
 check('NotebookEdit inside root', { cwd: ROOT, tool_name: 'NotebookEdit', tool_input: { notebook_path: path.join(ROOT, 'n.ipynb') } }, 'ALLOW');
+check('MultiEdit outside root', { cwd: ROOT, tool_name: 'MultiEdit', tool_input: { file_path: path.join(OUTSIDE, 'f.js') } }, 'DENY');
+check('MultiEdit inside root', { cwd: ROOT, tool_name: 'MultiEdit', tool_input: { file_path: path.join(ROOT, 'src', 'a.js') } }, 'ALLOW');
+
+console.log('\nwrong cwd / stated-target does not override real cwd:');
+// A session sitting in OUTSIDE cannot write into ROOT just because a prompt claims ROOT is the
+// target -- the guard only ever trusts the payload's own cwd field.
+check('edit into a different project than the real cwd', edit(path.join(ROOT, 'src', 'a.js'), OUTSIDE), 'DENY');
+
+console.log('\nsymlink / junction escape (must DENY):');
+{
+  const linkPath = path.join(ROOT, 'linked-out');
+  try {
+    fs.symlinkSync(OUTSIDE, linkPath, process.platform === 'win32' ? 'junction' : 'dir');
+    check(
+      'path through a junction planted inside root, pointing outside',
+      edit(path.join(linkPath, 'escape.js')),
+      'DENY'
+    );
+  } catch (err) {
+    console.log(`  SKIP  junction/symlink test -- could not create link (${err.code || err.message})`);
+  }
+}
 
 // Simulated internal failure: the guard must block, not wave the call through.
 console.log('\nfail-closed: simulated internal error (must DENY):');
