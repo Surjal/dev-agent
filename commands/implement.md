@@ -259,6 +259,16 @@ created at all for a Trivial-tier task (no `researcher`, no `architect`, nothing
    if you'd reached it in a single continuous run — the numbered stages and their loop-on-failure
    behavior don't change based on whether this is a fresh run or a resume.
 
+## First-run setup
+
+Immediately after Persistent execution state above (once `.devagent/` exists) and before Capability
+detection, check `.devagent/.onboarded`. If it's missing, this is the first `/implement` or
+`/analyze` run for this project — run the one-time Playwright/Obsidian setup check in
+`docs/first-run-setup.md`, then write the marker. If it already exists, skip this step entirely and
+silently — never re-ask, never re-install, on any later run. This step is not part of Resume: a
+resumed run skips it exactly as it would if `.devagent/.onboarded` already existed, since resuming
+implies the project has already been through at least one prior run.
+
 ## Observability
 
 At each stage start (or explicit skip), print one concise line — not a paragraph, not a tool-call
@@ -298,7 +308,9 @@ This is read-only detection — never install Playwright, never install browser 
 `package.json` because Playwright happens to be missing. "Playwright: unavailable" is a normal,
 expected result for most projects, not an error. See `docs/capabilities.md` for exactly what
 "available" requires (the target project's own dependency manifest, not anything cached elsewhere
-on the machine).
+on the machine). The one exception is the one-time First-run setup step above, which may install
+Playwright, but only after explicit per-project user confirmation the first time `/implement` runs
+against this project — never here, and never again after that first ask.
 
 ## Project discovery (Stage 2)
 
@@ -401,7 +413,7 @@ continue?" between ordinary stages — only stop for a decision that genuinely r
 Establish Target project boundary above first, with `Status: VERIFIED`, before step 0. If
 `$ARGUMENTS` requested `--resume`, follow Resume above instead of starting here.
 
-0. Ensure `.devagent/` exists (Persistent execution state above).
+0. Ensure `.devagent/` exists (Persistent execution state above), then run First-run setup above.
 1. Run Capability detection above and present the CAPABILITIES report.
 2. Apply Stage selection above against the actual request and the capabilities just detected —
    including whether the Trivial-task tier genuinely applies (see Stage selection → Trivial-task
