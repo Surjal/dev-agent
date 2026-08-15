@@ -64,19 +64,32 @@ after that, remains exactly as conservative as described above.
 
 ### Browser detection
 
-"Browser: available" has two independent paths to `available` — check both, in this order:
+"Browser: available" has independent paths to `available` — check in this order, stopping at the
+first that resolves:
 
-1. **Playwright path**: if Playwright detection above is `available`, Browser is `available` with
-   `Browser backend: playwright`. `dev-agent:visual-qa` confirms browsers actually launch by running
-   the project's own Playwright tests.
-2. **Chrome DevTools MCP path**: only checked when the Playwright path is `unavailable`. If a
-   connected MCP server exposes browser-automation tools (recognized by tool name prefix — the
-   Chrome DevTools MCP server's tools, e.g. `mcp__chrome-devtools__*`), Browser is `available` with
-   `Browser backend: chrome-devtools-mcp`. This is read-only detection too — it never starts, pairs,
-   or configures an MCP server; it only checks whether one is already connected in this session.
+1. **Playwright path**: if Playwright detection above is `available` (the **target project itself**
+   depends on it — see above), Browser is `available` with `Browser backend: playwright`.
+   `dev-agent:visual-qa` confirms browsers actually launch by running the project's own Playwright
+   tests, via `Bash`. This is deliberately project-scoped — do not confuse it with path 3 below, a
+   session having some Playwright-*capable* MCP server connected does not make this path resolve;
+   only the project's own dependency manifest does.
+2. **Chrome DevTools MCP path**: only checked when path 1 is `unavailable`. If a connected MCP
+   server exposes browser-automation tools recognized by tool name prefix `mcp__chrome-devtools__*`,
+   Browser is `available` with `Browser backend: chrome-devtools-mcp`.
+3. **Playwright MCP path**: only checked when paths 1 and 2 are both `unavailable`. If a connected
+   MCP server instead exposes browser-automation tools recognized by tool name prefix
+   `mcp__playwright__*` (a generic Playwright-driven MCP server — a session-level tool, unrelated to
+   whether the *target project* itself depends on Playwright), Browser is `available` with `Browser
+   backend: playwright-mcp`. This exists specifically because a session can have this kind of server
+   connected with no project-level Playwright at all — the two are easy to conflate by name only,
+   don't: `playwright` means the project's own dependency; `playwright-mcp` means a connected
+   session-level MCP server, functionally the same kind of thing as `chrome-devtools-mcp`.
 
-If neither path resolves, Browser is `unavailable` with `Browser backend: none`. The two backends
-are mutually exclusive per run — `visual-qa` uses whichever one detection found, never both.
+Paths 2 and 3 are both read-only detection — neither ever starts, pairs, or configures an MCP
+server; they only check whether one is already connected in this session.
+
+If no path resolves, Browser is `unavailable` with `Browser backend: none`. All backends are
+mutually exclusive per run — `visual-qa` uses whichever one detection found, never more than one.
 
 ## Report format
 
@@ -91,7 +104,7 @@ Frontend: <framework or "none">
 Backend: <framework or "none">
 Playwright: available | unavailable
 Browser: available | unavailable
-Browser backend: playwright | chrome-devtools-mcp | none
+Browser backend: playwright | chrome-devtools-mcp | playwright-mcp | none
 Git: available | unavailable
 GitHub: available | unavailable
 Obsidian: available | unavailable
@@ -112,10 +125,11 @@ consults Obsidian (see `docs/obsidian-memory.md`), just not this capability list
   apply.
 - **`dev-agent:visual-qa`**: only invoked when Browser is `available` (see Stage selection in
   `commands/implement.md`) — regardless of which backend. With the `playwright` backend it runs and
-  inspects existing/newly-written Playwright tests. With the `chrome-devtools-mcp` backend there are
-  no test files to run (that backend has no project-level test suite), so it drives the relevant
-  flows itself via the MCP server's tools (navigate, inspect, screenshot) and reports the same
-  evidence-based output. Either way it does not author new test files itself (it has no `Edit`/
-  `Write`, matching every other read-only agent in this plugin).
+  inspects existing/newly-written Playwright tests. With either MCP-backed backend
+  (`chrome-devtools-mcp` or `playwright-mcp`) there are no test files to run (neither has a
+  project-level test suite), so it drives the relevant flows itself via that server's tools
+  (navigate, inspect, screenshot) and reports the same evidence-based output. Either way it does not
+  author new test files itself (it has no `Edit`/`Write`, matching every other read-only agent in
+  this plugin).
 - **Definition of Done**: Browser-based QA is `PASS` or `SKIPPED — capability unavailable`, never
   silently upgraded to `PASS` when it was actually skipped.

@@ -75,7 +75,8 @@ What the plugin *does* control, and what travels with it to every project:
 
 - Each read-only agent (`researcher`, `tester`, `reviewer`, `architect`, `ux-designer`,
   `visual-qa`) is defined with `tools: Read, Grep, Glob, Bash` in its frontmatter (`visual-qa` also
-  gets `mcp__chrome-devtools__*`, for its second backend — see below) — no `Edit`/
+  gets `mcp__chrome-devtools__*` and `mcp__playwright__*`, for its two MCP-backed backends — see
+  below) — no `Edit`/
   `Write` tool is granted to them at all. This is enforced by Claude Code itself, not by the
   agent's own judgment. Each of these agents is also explicitly instructed not to route around the
   missing tools via `Bash` shell redirection (`>`, `cp`, `sed -i`, etc.) — omitting Edit/Write only
@@ -179,7 +180,7 @@ recorded in `.devagent/.onboarded` and never asked again for that project.
 | `developer` | Implements the approved plan (backend/general), smallest correct diff, follows existing conventions | `Read, Edit, Write, Grep, Glob, Bash` |
 | `frontend-developer` | Implements the ux-designer's design system in the project's actual detected frontend stack — layouts, pages, components, all UI states, responsive, accessibility | `Read, Edit, Write, Grep, Glob, Bash` |
 | `tester` | Detects and runs the project's real test/build/lint tooling, verdicts PASS/FAIL | `Read, Grep, Glob, Bash` (no edit) |
-| `visual-qa` | Runs the project's existing Playwright tests, or drives flows directly via a connected Chrome DevTools MCP server when Playwright isn't available; inspects screenshots/console/network evidence, checks functional/visual/responsive/UX-state/accessibility behavior in a real browser. Only invoked when Browser is genuinely available (either backend). Never authors new test files. | `Read, Grep, Glob, Bash, mcp__chrome-devtools__*` (no edit) |
+| `visual-qa` | Runs the project's existing Playwright tests, or drives flows directly via a connected Chrome DevTools MCP server or generic Playwright MCP server when project-level Playwright isn't available; inspects screenshots/console/network evidence, checks functional/visual/responsive/UX-state/accessibility behavior in a real browser. Only invoked when Browser is genuinely available (any backend). Never authors new test files. | `Read, Grep, Glob, Bash, mcp__chrome-devtools__*, mcp__playwright__*` (no edit) |
 | `reviewer` | Senior-engineer review: correctness/architecture/security/performance/maintainability/testing, verdicts APPROVED/CHANGES REQUIRED | `Read, Grep, Glob, Bash` (no edit) |
 
 Once installed, these are namespaced subagents invoked via the native **`Agent` tool**'s
@@ -425,16 +426,23 @@ See `CLAUDE.md` for the rules that govern development of this repo specifically.
       the target project (`state.json`, `plan.md`, `progress.md`, `decisions.md`, `failures.md`);
       `/implement --resume` re-verifies the boundary and cross-checks state against the actual
       repository rather than trusting it. See `docs/deep-execution.md`.
-- [x] Implemented — live verification pending — A second browser-automation backend for
-      `visual-qa` — a connected Chrome DevTools MCP server satisfies "Browser: available" when
-      Playwright isn't (`Browser backend: chrome-devtools-mcp`). See `docs/capabilities.md` →
-      Browser detection, `agents/visual-qa.md`. The detection rule, capability-report field, and
-      `visual-qa` dual-backend contract are implemented and statically verified (`plugin validate
-      --strict`, boundary-guard suite, doc-consistency sweep all pass); a real end-to-end run —
-      an actual connected Chrome DevTools MCP server, a throwaway no-Playwright frontend project,
-      a live `/implement` pass confirming an actual `mcp__chrome-devtools__*` tool call — has not
-      been performed, since no such server is connected in any session so far. Do not treat this as
-      fully verified until that live run happens.
+- [x] Implemented — live verification pending — A second (and third) browser-automation backend
+      for `visual-qa` — a connected browser-automation MCP server satisfies "Browser: available"
+      when project-level Playwright isn't: either Chrome DevTools MCP (`Browser backend:
+      chrome-devtools-mcp`) or a generic Playwright MCP server (`Browser backend: playwright-mcp`).
+      See `docs/capabilities.md` → Browser detection, `agents/visual-qa.md`. A real gap was found
+      and fixed via live testing: a session had a connected `mcp__playwright__*` MCP server (not
+      Chrome DevTools MCP) and `visual-qa` had no tool grant for it, so it couldn't drive the
+      browser via that server even though a supported backend was genuinely connected — fixed by
+      granting both `mcp__chrome-devtools__*` and `mcp__playwright__*`, and by naming the two
+      MCP-server-backed cases distinctly from the project-level `playwright` backend so they're
+      never conflated. Statically verified (`plugin validate --strict`, boundary-guard suite,
+      doc-consistency sweep all pass). The `playwright-mcp` path's *connectivity* was confirmed live
+      this session (a real `mcp__playwright__*` server is connected) — a full `/implement` run
+      exercising `visual-qa` end-to-end through it has not yet been performed. The
+      `chrome-devtools-mcp` path remains entirely unverified live — no such server has been
+      connected in any session so far. Do not treat either MCP-backed path as fully verified until
+      those live runs happen.
 - [x] Complete / Verified — Semantic search over the Obsidian vault — no vector store/embeddings
       added (plugin ships no deps beyond one hook); implemented as a documented fallback strategy
       (full-file semantic read when keyword search plausibly misses a synonymous entry or a brain

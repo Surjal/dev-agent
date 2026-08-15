@@ -299,7 +299,7 @@ Frontend: <framework or "none">
 Backend: <framework or "none">
 Playwright: available | unavailable
 Browser: available | unavailable
-Browser backend: playwright | chrome-devtools-mcp | none
+Browser backend: playwright | chrome-devtools-mcp | playwright-mcp | none
 Git: available | unavailable
 GitHub: available | unavailable
 Obsidian: available | unavailable
@@ -313,13 +313,16 @@ on the machine). The one exception is the one-time First-run setup step above, w
 Playwright, but only after explicit per-project user confirmation the first time `/implement` runs
 against this project — never here, and never again after that first ask.
 
-Browser has a second path to `available` even when Playwright is `unavailable`: a connected Chrome
-DevTools MCP server (see `docs/capabilities.md` → Browser detection). This never involves starting
-or configuring an MCP server — only checking whether one is already connected. Stage selection below
-and `agents/visual-qa.md` key off `Browser: available` (either backend), not off Playwright
-specifically — the one exception is `frontend-developer` authoring Playwright spec files, which
-stays keyed on `Playwright: available` specifically (see step 8 below), since there's no spec file
-to author for the `chrome-devtools-mcp` backend.
+Browser has further paths to `available` even when Playwright is `unavailable` (at the project
+level): a connected Chrome DevTools MCP server, or a connected generic Playwright MCP server (see
+`docs/capabilities.md` → Browser detection — the latter is a session-level tool, not evidence the
+*target project* depends on Playwright, so it gets its own `playwright-mcp` backend name, distinct
+from the project-level `playwright` backend). This never involves starting or configuring an MCP
+server — only checking whether one is already connected. Stage selection below and
+`agents/visual-qa.md` key off `Browser: available` (any backend), not off Playwright specifically —
+the one exception is `frontend-developer` authoring Playwright spec files, which stays keyed on
+`Playwright: available` specifically (see step 8 below), since there's no spec file to author for
+either MCP-backed backend.
 
 ## Project discovery (Stage 2)
 
