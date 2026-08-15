@@ -168,12 +168,14 @@ is a normal, expected result, not an error condition. Full detection rules: `doc
 | `visual-qa` | Runs the project's existing Playwright tests, inspects screenshots/console/network evidence, checks functional/visual/responsive/UX-state/accessibility behavior in a real browser. Only invoked when Playwright is genuinely available. Never authors new test files. | `Read, Grep, Glob, Bash` (no edit) |
 | `reviewer` | Senior-engineer review: correctness/architecture/security/performance/maintainability/testing, verdicts APPROVED/CHANGES REQUIRED | `Read, Grep, Glob, Bash` (no edit) |
 
-Once installed, these are namespaced Task subagents: `dev-agent:architect`, `dev-agent:researcher`,
-`dev-agent:ux-designer`, `dev-agent:developer`, `dev-agent:frontend-developer`, `dev-agent:tester`,
-`dev-agent:visual-qa`, `dev-agent:reviewer`. The bundled commands already delegate using the
-fully-qualified names — if you write your own prompt that delegates manually, use the qualified
-name too, since the bare word ("researcher", etc.) does not reliably resolve once installed as a
-plugin.
+Once installed, these are namespaced subagents invoked via the native **`Agent` tool**'s
+`subagent_type` parameter (not the `Skill` tool — a plugin agent is not a skill, and
+`Skill("dev-agent:developer")` fails with "Unknown skill"): `dev-agent:architect`,
+`dev-agent:researcher`, `dev-agent:ux-designer`, `dev-agent:developer`,
+`dev-agent:frontend-developer`, `dev-agent:tester`, `dev-agent:visual-qa`, `dev-agent:reviewer`. The
+bundled commands already delegate using the fully-qualified names — if you write your own prompt
+that delegates manually, use the qualified name too, since the bare word ("researcher", etc.) does
+not reliably resolve once installed as a plugin.
 
 Not every task uses every agent — `/implement` selects which stages apply based on the task's
 actual scope *and* detected capabilities (see Stage selection in `commands/implement.md`). A bug

@@ -25,7 +25,12 @@ that's a worse design than just always running the real lifecycle and letting St
 `commands/implement.md`) skip what genuinely doesn't apply to a given task. A bug fix already skips
 architect/UX/frontend/visual-qa when they don't apply; that skipping *is* the "fast" behavior for a
 small task, arrived at through the same stage-selection logic every task uses, not through a
-separate mode with different rules.
+separate mode with different rules. The Trivial-task tier (`commands/implement.md` → Stage
+selection) extends this same logic to `researcher` — until it existed, `researcher` was the one
+stage every task paid for unconditionally regardless of size, which was never a deliberate quality
+floor, just an oversight in the original stage-selection table. Testing, review, boundary
+enforcement, and execution-state tracking are not part of this — those never had a skip condition
+and still don't.
 
 ## Token / quality philosophy
 
@@ -49,6 +54,14 @@ a file you already read in full, or a second identical test run with no code cha
 tokens without reducing uncertainty. The test is always "does this specific additional step make the
 result more likely to be correct," not "would doing more look more thorough."
 
+### Depth over speed
+
+The system should spend additional tokens and tool calls when they improve: understanding,
+architecture, implementation quality, UX/UI, testing, debugging, security, performance,
+accessibility, reliability. However, do not perform redundant investigation, repeatedly reread
+unchanged files, or continue analysis after sufficient evidence has been obtained. The objective is
+maximum useful work, not maximum elapsed time.
+
 ## The 15-stage lifecycle
 
 See `commands/implement.md` → Execution stages for the numbered table and exactly what triggers each
@@ -57,9 +70,9 @@ reviewer.md`'s single pass produces a distinct `Security Verdict` and `Performan
 (`PASS`/`FAIL`/`NOT APPLICABLE`, with evidence) alongside its overall `APPROVED`/`CHANGES REQUIRED`
 verdict. This was a deliberate choice over adding `security-reviewer`/`performance-reviewer`
 subagents: the task explicitly says not to add agents unless required, the reviewer already reads
-the full diff and has full context to judge both, and splitting them into separate Task calls would
-mean re-reading the same diff twice for no additional rigor — the checklist in `agents/reviewer.md`
-already treats them as first-class categories, just within one call.
+the full diff and has full context to judge both, and splitting them into separate `Agent` tool
+calls would mean re-reading the same diff twice for no additional rigor — the checklist in
+`agents/reviewer.md` already treats them as first-class categories, just within one call.
 
 ## Persistent execution state
 
@@ -91,7 +104,7 @@ know *where* execution is and whether the recorded state is even worth trusting:
   "gitRoot": "D:\\dev-agent-tests\\my-app",
   "task": "Add pagination to the users table",
   "stage": "implementation",
-  "completedStages": ["target-verification", "understand", "discovery"],
+  "completedStages": ["target-verification", "understand", "discovery", "research"],
   "skippedStages": ["history", "architecture", "ux"],
   "status": "in_progress",
   "iteration": 1,
@@ -101,8 +114,11 @@ know *where* execution is and whether the recorded state is even worth trusting:
 
 - `stage` values are the kebab-case stage names from the Execution stages table (`target-verification`,
   `understand`, `discovery`, `history`, `architecture`, `ux`, `research`, `implementation`, `testing`,
-  `visual-qa`, `review` — covering stages 10-12 together, since they're one Task call — `definition-of-done`,
-  `wrap-up`).
+  `visual-qa`, `review` — covering stages 10-12 together, since they're one `Agent` tool call —
+  `definition-of-done`, `wrap-up`). `discovery` and `research` (stages 2 and 6) complete or get
+  skipped together — they're one `dev-agent:researcher` call, not two (see the note under Execution
+  stages in `commands/implement.md`); a Trivial-task run records both as `skippedStages` entries
+  since there is no researcher dispatch at all in that case.
 - `completedStages` vs `skippedStages` is the field that makes resume actually safe: without it, a
   resumed session can't tell "UX hasn't been reached yet" from "UX was deliberately skipped because
   this is a backend-only task" — both would otherwise look identical (absent from a single

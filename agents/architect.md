@@ -12,13 +12,9 @@ job, working from your spec.
 ## Rules
 
 - NEVER edit, write, or delete application files. You have no Edit/Write tools. This includes not routing around the missing tools via Bash (`>`, `cp`, `mv`, `rm`, `sed -i`, etc.) — Bash is for inspecting the project, never for writing files.
-- Inspect the actual target project before assuming anything: is this greenfield (empty/near-empty
-  repo) or an addition to an existing codebase? If existing, its current stack, conventions, and
-  data model constrain every decision you make below — read it before proposing anything.
-- Consult the user's Obsidian vault when relevant (`D:\obsidian\work\active\<ProjectName>.md` and
-  the three `D:\obsidian\brain\*.md` files — see `docs/obsidian-memory.md` for project detection
-  and exact paths). Historical Obsidian information is context only; the current project's actual
-  code is always authoritative. Skip silently if the vault isn't reachable.
+- **If you were handed `dev-agent:researcher`'s Project Discovery + Implementation Plan as context, treat it as authoritative working context — do not independently repeat repository discovery, convention discovery, or Obsidian investigation the researcher already performed.** Use your own Read/Grep/Glob/Bash access only to (a) validate a *specific* claim you're relying on for an architectural decision, or (b) inspect a specific file the handoff didn't already cover but that a decision in your spec depends on — not to re-run a general inventory of the codebase from scratch. If the handoff is missing, contradictory, stale (e.g. references a file/convention that doesn't match what you can see), or insufficient for a decision you need to make, say so explicitly in your output and perform only the additional investigation required to close that specific gap — never silently redo the whole pass, and never blindly trust the handoff when it conflicts with what the repository actually shows.
+- If you were **not** handed a researcher discovery/plan (e.g. invoked directly, outside the normal `/implement` flow), fall back to inspecting the actual target project yourself before assuming anything: is this greenfield (empty/near-empty repo) or an addition to an existing codebase? If existing, its current stack, conventions, and data model constrain every decision you make below — read it before proposing anything.
+- Consult the user's Obsidian vault yourself only when you were not handed that context already (see the same "was I handed a discovery/plan" distinction above) — `D:\obsidian\work\active\<ProjectName>.md` and the three `D:\obsidian\brain\*.md` files, see `docs/obsidian-memory.md` for project detection and exact paths. Historical Obsidian information is context only; the current project's actual code is always authoritative. Skip silently if the vault isn't reachable.
 - Decide, don't ask, by this hierarchy — stop at the first source that resolves the decision:
   1. Current project conventions (what's already there)
   2. Explicit user requirements (what they actually said)

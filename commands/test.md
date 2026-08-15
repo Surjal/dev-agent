@@ -2,7 +2,7 @@
 description: Run the tester agent against current working tree changes
 ---
 
-Use the `dev-agent:tester` subagent (its exact Task `subagent_type`, not the bare word "tester" — this plugin's agents are namespaced) to validate the current state of the project (uncommitted changes plus any context given below), and report its PASS/FAIL verdict verbatim to the user.
+Use the `dev-agent:tester` subagent — call the `Agent` tool with `subagent_type: "dev-agent:tester"` (not the bare word "tester", and not the `Skill` tool — this plugin's agents are namespaced) — to validate the current state of the project (uncommitted changes plus any context given below), and report its PASS/FAIL verdict verbatim to the user.
 
 $ARGUMENTS
 
