@@ -59,13 +59,46 @@ below.
 If `<vault root>\work\active\<ProjectName>.md` exists, read it — especially `## Active Work` and
 recent `## Session Log` entries. If any of the three brain files exist, search them for entries
 tagged `[[<ProjectName>]]` or otherwise relevant to the current task (e.g. searching Patterns.md
-for "pagination" when asked to implement pagination).
+for "pagination" when asked to implement pagination) — see Search strategy below for exactly how.
 
 Treat everything found as **historical context, not current truth**. The target project's actual
 source code, dependencies, and schema are always authoritative over anything in Obsidian — a
 Gotchas.md entry from six months ago about an N+1 query may no longer apply if the code has since
 changed. Compare, don't copy: state what the historical note claims, then verify it against what
 the current codebase actually shows before acting on it.
+
+## Search strategy
+
+The plugin ships no vector store, no embeddings, no external search service — only `Read`/`Grep`
+over plain files, the same tools every agent already has. Two strategies, not two tools:
+
+1. **Keyword/tag search (default)** — `Grep` for the task's own terms (e.g. "pagination") and for
+   `[[<ProjectName>]]` tags, same as the Read step above describes. Cheap, and correct for most
+   vaults: a brain file with a few dozen entries rarely hides a relevant one behind different
+   wording that grep can't find some way in.
+2. **Semantic read (when keyword search stops scaling)** — switch to this when either is true for
+   the brain file/note being searched:
+   - A literal keyword search plausibly missed something because the relevant entry could reasonably
+     use different words for the same concept (e.g. task mentions "infinite scroll", an existing
+     entry says "cursor-based feed loading" — same idea, no shared keyword).
+   - The file has grown large enough that a quick skim isn't reliable (a rough guide: more entries
+     than fit in one `Read` without truncation, or you're seeing enough `##`/`###` headings that
+     scanning by eye would plausibly skip one).
+
+   When either applies, `Read` the whole file (or the remaining untruncated portion) and judge
+   relevance by meaning against the current task — read every entry's heading and first line or two,
+   not just the ones a keyword happened to match — rather than trusting `Grep` alone. This is a
+   comprehension pass using the agent's own reading, not a new retrieval mechanism: no embeddings are
+   computed, no index is built, nothing is cached between runs. Cite which entries you judged
+   relevant and why (the concept match, not just the string match) the same way Root Cause/Relevant
+   Files already require concrete citations elsewhere in this plugin.
+
+Do not reach for semantic reading by default — it costs more of the agent's own context than a
+targeted grep, so use it only when one of the two triggers above genuinely applies. If a vault ever
+grows past what a single `Read` pass over a brain file can meaningfully judge even with this
+strategy, that is the signal the deferred "RAG-based retrieval" extension (`docs/architecture.md` →
+Future extensions) would actually need to be built — not a reason to guess at what a keyword search
+alone would have missed.
 
 ## Write step (natural completion of `/implement`)
 

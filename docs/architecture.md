@@ -23,7 +23,7 @@ Orchestrator (this session, driven by commands/implement.md)
   ├─▶ developer          (read/write — backend/general implementation)
   ├─▶ frontend-developer (read/write — only when UI is in scope)
   ├─▶ tester             (read-only, runs commands)
-  ├─▶ visual-qa          (read-only — only when UI is in scope AND Playwright is available)
+  ├─▶ visual-qa          (read-only — only when UI is in scope AND Browser is available)
   └─▶ reviewer           (read-only)
 ```
 
@@ -84,7 +84,8 @@ fast mode). Responsibilities:
    the original four (`researcher` → `developer` → `tester` → `reviewer`); `architect`,
    `ux-designer`, and `frontend-developer` join in only when the task is a new project, or a
    feature big enough to need a real spec and/or touches UI; `visual-qa` joins in only when UI is
-   in scope *and* capability detection found Playwright available. See `commands/implement.md` →
+   in scope *and* capability detection found Browser available (via Playwright or a connected
+   Chrome DevTools MCP server). See `commands/implement.md` →
    Stage selection for the exact decision table and the four worked examples.
 5. If in scope, delegate to `architect` first — everything downstream works from its spec instead
    of a re-derived summary. Any genuinely business-critical open question it raises gets asked to
@@ -142,6 +143,7 @@ Frontend: <framework or "none">
 Backend: <framework or "none">
 Playwright: available | unavailable
 Browser: available | unavailable
+Browser backend: playwright | chrome-devtools-mcp | playwright-mcp | none
 Git: available | unavailable
 GitHub: available | unavailable
 Obsidian: available | unavailable
@@ -159,10 +161,20 @@ per-project First-run setup check (`docs/first-run-setup.md`), which may install
 only after explicit user confirmation the first time `/implement`/`/analyze` runs against a given
 project — never again after that.
 
-"Browser" is listed as its own capability, separate from Playwright, on purpose: for the current
-implementation it's derived 1:1 from Playwright (there's no other browser-automation path wired
-up), but a future browser-automation technology (see Future extensions) could satisfy "Browser:
-available" without Playwright specifically, without requiring a redesign of this report format.
+"Browser" is listed as its own capability, separate from Playwright, on purpose: it's `available`
+via the Playwright path above, or via a connected browser-automation MCP server — either a Chrome
+DevTools MCP server (`Browser backend: chrome-devtools-mcp`) or a generic Playwright MCP server
+(`Browser backend: playwright-mcp`) — checked only when the project-level Playwright path is
+`unavailable`. `playwright-mcp` is deliberately a distinct name from the project-level `playwright`
+backend: a session can have a Playwright-driven MCP server connected with no bearing at all on
+whether the *target project* itself depends on Playwright, and conflating the two was a real bug
+found during live testing (a session had a connected generic Playwright MCP server, no Chrome
+DevTools MCP, and `visual-qa` had no tool grant for it — see `agents/visual-qa.md`, which now grants
+both `mcp__chrome-devtools__*` and `mcp__playwright__*`). This lets `visual-qa` run in environments
+with a connected browser-automation MCP server but no project-level Playwright, without changing
+Stage selection or `visual-qa`'s contract — see `agents/visual-qa.md` and `docs/capabilities.md` →
+Browser detection for the exact rule and how
+`visual-qa` behaves under each backend.
 
 ## Definition of Done
 
@@ -179,10 +191,10 @@ Frontend itself splits into three parts, because "the code looks right" and "a r
 confirmed it" are different claims: code-level checks (validation/accessibility markup/design
 consistency), **Browser-based QA** (`visual-qa`'s actual result), and Responsive QA. Browser-based
 QA is always exactly one of `PASS` or `SKIPPED — capability unavailable` — never silently reported
-as `PASS` when Playwright wasn't available, and never treated as equivalent to a code-level pass.
-Where Playwright *is* available and UI changed, Browser-based QA is normally required (genuinely
-run and pass) before final approval; for backend-only work, the whole Frontend category (including
-this sub-item) doesn't apply and is skipped, not force-run.
+as `PASS` when Browser wasn't available, and never treated as equivalent to a code-level pass.
+Where Browser *is* available (either backend) and UI changed, Browser-based QA is normally required
+(genuinely run and pass) before final approval; for backend-only work, the whole Frontend category
+(including this sub-item) doesn't apply and is skipped, not force-run.
 
 ## Specialized agents
 
@@ -194,7 +206,7 @@ this sub-item) doesn't apply and is skipped, not force-run.
 | `developer` | Read, Edit, Write, Grep, Glob, Bash | Yes | Implement the approved plan (backend/general), smallest correct diff, follow existing conventions |
 | `frontend-developer` | Read, Edit, Write, Grep, Glob, Bash | Yes | Implement the ux-designer's design system in the project's actual detected frontend stack |
 | `tester` | Read, Grep, Glob, Bash | No | Detect and run the project's real test/build/lint tooling, verdict PASS/FAIL |
-| `visual-qa` | Read, Grep, Glob, Bash | No | Run the project's existing Playwright tests, inspect screenshots/console/network evidence, check functional/visual/responsive/UX-state/accessibility behavior in a real browser. Only invoked when Playwright is available; never authors new test files |
+| `visual-qa` | Read, Grep, Glob, Bash, `mcp__chrome-devtools__*`, `mcp__playwright__*` | No | Run the project's existing Playwright tests (or drive flows directly via a connected Chrome DevTools MCP server or generic Playwright MCP server when project-level Playwright isn't available), inspect screenshots/console/network evidence, check functional/visual/responsive/UX-state/accessibility behavior in a real browser. Only invoked when Browser is available; never authors new test files |
 | `reviewer` | Read, Grep, Glob, Bash | No | Senior-engineer review: correctness, architecture, maintainability, test coverage, plus explicit `Security Verdict` and `Performance Verdict` (`PASS`/`FAIL`/`NOT APPLICABLE`, with evidence) — these back the Definition of Done's Security/Performance categories (v1.4.0) without a dedicated agent for either. Overall verdict APPROVED/CHANGES REQUIRED |
 
 Read-only agents have no `Edit`/`Write` tool at all — this is enforced by Claude Code's
@@ -359,8 +371,12 @@ so each of these agents' prompts also explicitly forbids using `Bash` to write f
 
 Playwright/browser access follows the exact same two tool-permission layers, with no elevation:
 `visual-qa` only ever runs `npx playwright test` (or the project's own equivalent) through its
-ordinary `Bash` permission, and capability detection (see above) never installs anything regardless
-of what a target project's permissions would otherwise allow it to do.
+ordinary `Bash` permission, or — under the `chrome-devtools-mcp`/`playwright-mcp` backends — only
+ever calls the `mcp__chrome-devtools__*`/`mcp__playwright__*` tools (respectively) already granted in
+its `tools:` frontmatter, no broader MCP access than that, and never both prefixes in the same run
+(it only calls the one matching the backend it was told). Capability detection (see above) never
+installs anything, and never starts or configures an MCP server, regardless of what a target
+project's permissions would otherwise allow it to do.
 
 ## Future extensions
 
@@ -368,11 +384,22 @@ This structure is meant to grow without a redesign — `architect`, `ux-designer
 `frontend-developer`, and `visual-qa` were all added this way, without touching `researcher`/
 `developer`/`tester`/`reviewer` or breaking the original 4-stage path:
 
-- **A second browser-automation backend for `visual-qa`** → e.g. a Chrome DevTools/browser MCP
-  server, for environments with a connected browser tool but no project-level Playwright. The
-  capability report already lists "Browser" separately from "Playwright" specifically so this slots
-  in without changing `commands/implement.md`'s Stage selection logic or `visual-qa`'s contract —
-  only the detection rule for "Browser: available" in `docs/capabilities.md` would need to widen.
+- ~~A second browser-automation backend for `visual-qa`~~ — **implemented, live verification
+  pending**: a connected browser-automation MCP server satisfies "Browser: available" when
+  project-level Playwright isn't — either Chrome DevTools MCP (`Browser backend:
+  chrome-devtools-mcp`) or a generic Playwright MCP server (`Browser backend: playwright-mcp`), see
+  `docs/capabilities.md` → Browser detection and `agents/visual-qa.md`. The `playwright-mcp` backend
+  and its matching `mcp__playwright__*` tool grant were added after a real bug found during live
+  testing against a Playwright MCP-connected session: capability detection could report
+  `Browser backend: playwright` for a project-level Playwright detection, but `visual-qa` had no
+  tool grant for a *session-level* Playwright MCP server, so an attempt to drive the browser directly
+  via that connected server (as opposed to running the project's own Bash-invoked tests) failed —
+  fixed by treating the two as distinct backends with distinct tool grants. Statically verified
+  (`plugin validate --strict`, boundary-guard suite, doc sweep); a real end-to-end run with an
+  actual connected Chrome DevTools MCP server has not been performed — see `README.md` → Roadmap for
+  the exact setup a future live test needs. The `playwright-mcp` path *was* live-confirmed available
+  this session (a real `mcp__playwright__*` server is connected) but a full `/implement` run through
+  it was not performed as part of this fix — see the live-test evidence in this session's report.
 - **Persistent memory** → the Obsidian integration (see Memory above) already replaces what would
   have been a custom store; a further step (Postgres + vector store + RAG) would sit behind the
   same read/write interface `commands/implement.md` already uses, without changing the agents.

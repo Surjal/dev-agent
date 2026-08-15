@@ -78,7 +78,7 @@ which apply; a stage that doesn't apply is explicitly recorded as `SKIPPED — N
 | 6 | *(merged into Stage 2)* | Kept as a numbered checkpoint for continuity with earlier versions' state files; it is never a second `dev-agent:researcher` dispatch — see the note after this table |
 | 7 | Implementation | `dev-agent:developer` / `dev-agent:frontend-developer` |
 | 8 | Testing | `dev-agent:tester`, loop to Implementation on FAIL |
-| 9 | Visual QA | `dev-agent:visual-qa`, if UI in scope and Playwright available |
+| 9 | Visual QA | `dev-agent:visual-qa`, if UI in scope and Browser available |
 | 10 | Security review | Part of `dev-agent:reviewer`'s pass, called out explicitly in its verdict |
 | 11 | Performance review | Same |
 | 12 | Final review | `dev-agent:reviewer` overall verdict, loop to Implementation on CHANGES REQUIRED |
@@ -299,6 +299,7 @@ Frontend: <framework or "none">
 Backend: <framework or "none">
 Playwright: available | unavailable
 Browser: available | unavailable
+Browser backend: playwright | chrome-devtools-mcp | playwright-mcp | none
 Git: available | unavailable
 GitHub: available | unavailable
 Obsidian: available | unavailable
@@ -311,6 +312,17 @@ expected result for most projects, not an error. See `docs/capabilities.md` for 
 on the machine). The one exception is the one-time First-run setup step above, which may install
 Playwright, but only after explicit per-project user confirmation the first time `/implement` runs
 against this project — never here, and never again after that first ask.
+
+Browser has further paths to `available` even when Playwright is `unavailable` (at the project
+level): a connected Chrome DevTools MCP server, or a connected generic Playwright MCP server (see
+`docs/capabilities.md` → Browser detection — the latter is a session-level tool, not evidence the
+*target project* depends on Playwright, so it gets its own `playwright-mcp` backend name, distinct
+from the project-level `playwright` backend). This never involves starting or configuring an MCP
+server — only checking whether one is already connected. Stage selection below and
+`agents/visual-qa.md` key off `Browser: available` (any backend), not off Playwright specifically —
+the one exception is `frontend-developer` authoring Playwright spec files, which stays keyed on
+`Playwright: available` specifically (see step 8 below), since there's no spec file to author for
+either MCP-backed backend.
 
 ## Project discovery (Stage 2)
 
@@ -340,14 +352,15 @@ major feature with a UI:
 |---|---|
 | Trivial, unambiguous, single-location change (see below) | `developer` → `tester` → `reviewer` (researcher skipped) |
 | Backend-only change, bug fix, migration, script | `researcher` → `developer` → `tester` → `reviewer` (no architect, no UX, no frontend-developer, no visual-qa) |
-| Frontend change, Playwright available | `researcher` → `ux-designer` → `frontend-developer` → `tester` → `visual-qa` → `reviewer` |
-| Frontend change, Playwright unavailable | `researcher` → `ux-designer` → `frontend-developer` → `tester` → `reviewer` (visual-qa skipped — report it explicitly, see below) |
-| Full application (new project, or a feature big enough to need a real spec) | `architect` → `researcher` → `ux-designer` → `developer` → `frontend-developer` → `tester` → `visual-qa` (if Playwright available) → `reviewer` |
+| Frontend change, Browser available | `researcher` → `ux-designer` → `frontend-developer` → `tester` → `visual-qa` → `reviewer` |
+| Frontend change, Browser unavailable | `researcher` → `ux-designer` → `frontend-developer` → `tester` → `reviewer` (visual-qa skipped — report it explicitly, see below) |
+| Full application (new project, or a feature big enough to need a real spec) | `architect` → `researcher` → `ux-designer` → `developer` → `frontend-developer` → `tester` → `visual-qa` (if Browser available) → `reviewer` |
 
 `visual-qa` is never invoked for a backend-only task regardless of capability — there's no UI for
-it to look at. When UI *is* in scope but Playwright is `unavailable`, don't skip it silently: state
-explicitly **"Visual QA skipped: browser automation capability unavailable."** so the user and the
-Definition of Done both see it was skipped, not passed.
+it to look at. When UI *is* in scope but Browser is `unavailable` (neither Playwright nor a
+connected Chrome DevTools MCP server), don't skip it silently: state explicitly **"Visual QA
+skipped: browser automation capability unavailable."** so the user and the Definition of Done both
+see it was skipped, not passed.
 
 ### Trivial-task tier — skipping `researcher` entirely
 
@@ -510,8 +523,9 @@ Establish Target project boundary above first, with `Status: VERIFIED`, before s
     Trivial task is itself evidence the task wasn't as trivial as assumed — consider escalating to
     `dev-agent:researcher` (and performing the Obsidian read from step 3, per its escalation rule)
     before the next fix attempt rather than retrying blind.
-11. If `visual-qa` is in scope (UI in scope and Playwright available), delegate to
-    `dev-agent:visual-qa` once the tester reports PASS. If its `Overall Result` is FAIL: send its
+11. If `visual-qa` is in scope (UI in scope and Browser available — either backend), delegate to
+    `dev-agent:visual-qa` once the tester reports PASS, telling it which `Browser backend` capability
+    detection found. If its `Overall Result` is FAIL: send its
     findings back to `dev-agent:frontend-developer` to fix, then re-run `dev-agent:tester` and
     `dev-agent:visual-qa` again (in that order) — the same failure-recovery loop as tester, just one
     stage further. Repeat until PASS or a genuine blocker. Never send known visual-qa failures
@@ -582,11 +596,12 @@ no Frontend category to check):
   - *Code-level frontend checks* — form validation, accessibility markup, consistency with the
     existing design system (or the ux-designer's new one). `PASS`/`FAIL`.
   - *Browser-based QA* — `dev-agent:visual-qa`'s result: `PASS`, or `SKIPPED — capability
-    unavailable` if Playwright wasn't available. **Never report this as PASS when it was actually
-    skipped** — a skip is a legitimate, expected outcome for a project without Playwright, but it
-    is not the same thing as a browser having actually confirmed the UI works. For a project where
-    Playwright *is* available and UI was changed, Browser-based QA should normally be required
-    (i.e. genuinely run and PASS) before final approval, not skipped by convenience.
+    unavailable` if Browser wasn't available (neither Playwright nor a connected Chrome DevTools MCP
+    server). **Never report this as PASS when it was actually skipped** — a skip is a legitimate,
+    expected outcome for a project with neither backend, but it is not the same thing as a browser
+    having actually confirmed the UI works. Where Browser *is* available and UI was changed,
+    Browser-based QA should normally be required (i.e. genuinely run and PASS) before final
+    approval, not skipped by convenience.
   - *Responsive QA* — mobile/tablet/desktop behavior, confirmed by `visual-qa` if it ran (`PASS`/
     `FAIL`/`SKIPPED`), otherwise a code-level check of the CSS/breakpoints against the ux-designer
     spec.
