@@ -38,7 +38,7 @@ claude plugin install dev-agent@dev-agent
 **From a git remote**, once this repo is pushed somewhere (e.g. GitHub):
 
 ```bash
-claude plugin marketplace add <git-url-or-owner/repo>
+claude plugin marketplace add https://github.com/surjal/dev-agent
 claude plugin install dev-agent@dev-agent
 ```
 

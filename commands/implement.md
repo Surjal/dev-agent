@@ -31,6 +31,27 @@ ambiguous, investigate it. When something is uncertain, verify it. When somethin
 it before retrying. Do not stop at "the first thing that appears to work" — inspect whether it
 actually satisfies the requirement.
 
+### Execution philosophy
+
+This is an autonomous, quality-first execution system. Do not optimize for speed, token usage,
+number of tool calls, or minimum effort. Prefer:
+
+- deeper repository investigation
+- broader reasoning
+- inspecting relevant files before modifying them
+- multiple implementation iterations
+- comprehensive testing
+- visual verification
+- security analysis
+- performance analysis
+- fixing discovered problems
+- polishing UX/UI
+- validating the final result
+
+The objective is not to produce an answer quickly. The objective is to produce the best complete
+working implementation that can reasonably be achieved from the supplied requirements. Continue
+working until the Definition of Done (below) is satisfied.
+
 **Arguments**: if `$ARGUMENTS` starts with `--resume` (with or without additional task text after
 it), skip straight to Resume below instead of starting at Stage 0. If it starts with `--deep`, strip
 that token (it's redundant) and treat the rest as the task text.
