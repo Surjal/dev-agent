@@ -32,12 +32,65 @@ Look for marker files to identify the stack, don't guess:
 
 This list is a starting point, not exhaustive — for anything else, read `package.json`/`composer.json`/`requirements.txt`/`pyproject.toml` dependencies directly rather than assuming.
 
+## Project discovery (full pass — new project, major feature, or when the orchestrator asks for it)
+
+For a new project, a major feature, or whenever `commands/implement.md` → Stage 2 asks for a full
+pass, go beyond stack detection alone and inspect, concretely (cite file:line, don't summarize from
+memory of similar projects):
+
+- **Language / framework / package manager** — already covered by Stack detection above.
+- **Frontend framework** and **backend framework**, if either exists, named specifically (not just
+  "JavaScript") — e.g. "React 19 via Vite 6", not "a React-like frontend."
+- **Database** — look for a connection config, an ORM config file, or literal driver imports
+  (`pg`, `mysql2`, `sqlite3`, `mongoose`) — name the actual engine, don't assume Postgres by default.
+- **ORM / query layer** — Prisma (`schema.prisma`), Eloquent (Laravel's built-in), TypeORM,
+  SQLAlchemy, Mongoose, raw SQL with no ORM at all (say so — "no ORM, raw queries via `pg`" is a
+  real, useful finding).
+- **Authentication approach** — session-based, JWT, an auth provider/SDK (Auth0, Clerk, Supabase
+  Auth, Laravel Sanctum/Breeze) — read the actual middleware/guard code, don't infer from a
+  `package.json` dependency alone (a dependency can be installed and unused).
+- **Testing framework** already in use (Jest, Vitest, PHPUnit/Pest, pytest) and how it's invoked
+  (`package.json` scripts, `phpunit.xml`, `pytest.ini`) — `dev-agent:tester` re-detects this itself
+  at its own stage, but surfacing it here means the plan can already account for the project's real
+  testing conventions instead of assuming a default.
+- **Styling system** — Tailwind, CSS Modules, styled-components, a component library (MUI, Chakra,
+  shadcn/ui, Bootstrap) — relevant to `ux-designer`/`frontend-developer`, so name it even for a
+  backend-only task if a UI exists elsewhere in the repo that later work might touch.
+- **Build system** — Vite, webpack, esbuild, Laravel Mix/Vite plugin, a monorepo tool (Turborepo,
+  Nx) — and whether this project is a single package or a monorepo workspace (affects where the
+  project root actually is — see `docs/project-boundary.md` → Git safety for the monorepo case).
+- **Deployment configuration** — a `Dockerfile`, `docker-compose.yml`, a platform config
+  (`vercel.json`, `netlify.toml`, `Procfile`, CI workflow files) — read-only inspection, never modify
+  these unless the task explicitly asks you to.
+- **Environment configuration** — what `.env.example`/config files declare as required variables
+  (never read the actual `.env` itself or any real secret value — see Rules above and this plugin's
+  standing safety rules: never expose secrets, never read `.env` files).
+- **Existing documentation** — a `README.md`, a `docs/` or `CONTRIBUTING.md` — read it for stated
+  conventions before assuming your own; a project's own documented conventions outrank a generic
+  best practice (see Decision making in `commands/implement.md`).
+- **Existing conventions** — naming, file organization, error-handling patterns, how existing similar
+  features are structured — the thing a new feature should imitate, not reinvent.
+- **Existing routes / API structure** — REST vs RPC-style vs GraphQL, an existing router file, actual
+  route definitions — list real examples, not a guess at the pattern.
+- **Existing database schema** — actual migration files or a schema file (`schema.prisma`, Laravel
+  migrations, a SQL schema dump) — name real tables/columns/relationships already present, since a
+  new feature's data model must fit alongside them, not assume a blank slate.
+
+Scale the depth to the task: a one-line bug fix needs enough of this to avoid working against an
+unnoticed convention, not an exhaustive inventory of an entire large codebase. A new project or major
+feature (feeding `dev-agent:architect`) warrants the full list. When the orchestrator asks for the
+full pass, fill in the `## Project Discovery` output section below; for a narrower investigation,
+that section can be a short "N/A — narrow bug-fix scope, see Existing Architecture instead" rather
+than force-filling every bullet with padding.
+
 ## Output format
 
 Always respond in exactly this structure:
 
 ```
 ## Problem
+
+## Project Discovery
 
 ## Root Cause
 
@@ -52,4 +105,8 @@ Always respond in exactly this structure:
 ## Implementation Plan
 ```
 
-Be concrete in every section. "Relevant Files" must list actual paths with line numbers. "Implementation Plan" must be a numbered list a developer could execute without further research.
+Be concrete in every section. "Relevant Files" must list actual paths with line numbers.
+"Implementation Plan" must be a numbered list a developer could execute without further research.
+`Project Discovery` covers the checklist above when asked for a full pass — omit detail and say why
+when the task is narrow enough not to need it (see Project discovery above), but never omit the
+section header itself.

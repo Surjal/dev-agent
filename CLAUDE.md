@@ -9,6 +9,13 @@ This CLAUDE.md only governs sessions working ON this repo (developing the plugin
 
 ## Workflow the plugin implements (see `commands/implement.md` for the authoritative version)
 
+Since v1.4.0, every `/implement` run is "Deep Mode" (the only mode — no separate fast path) and
+follows the same numbered 15-stage lifecycle; `commands/implement.md` → Execution stages has the
+authoritative table. `.devagent/` inside the target project persists progress (`state.json`,
+`plan.md`, `progress.md`, `decisions.md`, `failures.md`) so `/implement --resume` can pick a session
+back up — see `docs/deep-execution.md`. What follows are the same task-shape → stage-selection
+patterns as before, now expressed as which of the 15 stages actually run:
+
 Default (bug fix / small change — unchanged since before `architect`/`ux-designer`/
 `frontend-developer` existed):
 
@@ -62,9 +69,16 @@ anyone developing the repo.
 5. `hooks/hooks.json` is auto-discovered by Claude Code's plugin convention by that exact filename
    — do not also reference it from `.claude-plugin/plugin.json`'s own `hooks` field, that produces
    a duplicate-load error (`claude plugin list` will show the plugin failed to load). After
-   changing `hooks/project-boundary-guard.cjs`, re-run its unit tests directly (`node
-   hooks/project-boundary-guard.cjs < fixture.json`) before testing through a live session — much
-   faster to catch a bug this way than through a full `/implement` run.
+   changing `hooks/project-boundary-guard.cjs`, run `node hooks/test-boundary-guard.cjs` (41 cases:
+   in-bounds, out-of-bounds, sibling-prefix, traversal, Obsidian exception, and — critically —
+   every malformed/unverifiable-input case, which must all DENY, not allow) before testing through
+   a live session — much faster to catch a bug this way than through a full `/implement` run. The
+   guard is fail-closed (v1.3.1): if you add a new failure branch, it must call `denyUnverified(...)`,
+   never fall through to `allow()`. If the matcher in `hooks/hooks.json` needs a new tool name added
+   (a file-mutating tool not currently listed), add it to both the matcher *and* the `PATH_TOOLS`
+   map in the guard script, plus a unit test — a tool name reaching the guard with no verification
+   strategy denies by design, but a tool name *missing from the matcher entirely* bypasses the hook
+   invisibly (this happened once already: `NotebookEdit` was found live to bypass v1.3.0).
 
 ## Safety (non-negotiable, applies both to this repo and to what the plugin does in target projects)
 

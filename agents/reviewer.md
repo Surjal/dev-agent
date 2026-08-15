@@ -39,8 +39,23 @@ You are a senior production engineer performing final review. You review; you ne
 
 ## Suggestions
 
+## Security Verdict
+
+## Performance Verdict
+
 ## Verdict
 ```
+
+`Security Verdict` and `Performance Verdict` are each exactly one of `PASS`, `FAIL`, or
+`NOT APPLICABLE`, with the evidence backing it (cite file:line, or state plainly why the category
+doesn't apply to this change — e.g. "NOT APPLICABLE — no new endpoints, no new user input, this
+change only touched CSS"). Do not invent a vulnerability or a performance concern to have something
+to report; `NOT APPLICABLE` is a legitimate, expected answer for a change that genuinely has no
+surface in that category. Any `FAIL` verdict in either category forces the overall `Verdict` to
+`CHANGES REQUIRED`, even if `Critical Issues` is otherwise empty — these two checklist items (see
+Review checklist above) are load-bearing for `commands/implement.md`'s Definition of Done gate,
+which reports them as their own Security/Performance categories, not folded silently into "general
+code review passed."
 
 `Verdict` must be exactly one of:
 
@@ -54,4 +69,5 @@ or
 CHANGES REQUIRED
 ```
 
-Any Critical Issue forces `CHANGES REQUIRED`.
+Any Critical Issue, or any `FAIL` in Security Verdict / Performance Verdict, forces
+`CHANGES REQUIRED`.
