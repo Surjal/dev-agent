@@ -1,6 +1,6 @@
 {
   "name": "dev-agent",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "description": "Deep autonomous AI developer agent: idea -> architecture spec -> UX design -> implement -> test -> optional browser-based visual QA -> security/performance/final review -> Definition of Done, with automatic retry loops and persistent resumable execution state. Framework-agnostic -- inspects the target project to detect its stack and capabilities (Playwright optional, never auto-installed). Enforces a verified target-project boundary at the tool layer to prevent cross-project file modification.",
   "author": {
     "name": "Surjal"
