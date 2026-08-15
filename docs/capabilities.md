@@ -29,7 +29,7 @@ without taking an action (installing something, running an ambiguous command), t
 | GitHub | `gh --version` succeeds **and** `gh auth status` reports an authenticated account. Either failing → `unavailable`. |
 | Test runner | Reuse `agents/tester.md`'s own detection (npm scripts, `phpunit`/`pest`, `pytest`, etc.) — surfaced explicitly in the capability report rather than only discovered later when `tester` runs. |
 | Playwright | See below — its own subsection, since it's the one with behavioral consequences. |
-| Browser | Currently derived 1:1 from Playwright (see below) — listed as a separate row because a future browser-automation technology could satisfy it without Playwright specifically; the plugin doesn't hardcode "browser == Playwright" as a permanent assumption, just as the current one. |
+| Browser | See below — `available` via either the Playwright path or the Chrome DevTools MCP path; reported with a `Browser backend` field naming which one. |
 | Obsidian | Vault root (default `D:\obsidian`) plus the specific note/brain-file paths reachable — same probe `docs/obsidian-memory.md` already defines. `unavailable` if the vault root or those specific files can't be read (missing, or denied by the target project's permissions). |
 
 ### Playwright detection — the one with consequences, so precise
@@ -64,10 +64,19 @@ after that, remains exactly as conservative as described above.
 
 ### Browser detection
 
-For the current implementation, "Browser: available" is the same signal as "Playwright: available"
-— there's no other browser-automation path implemented yet. `dev-agent:visual-qa` is the one that
-actually confirms browsers launch in practice (by running real tests); capability detection only
-reports whether the *precondition* for that (Playwright wired into this project) holds.
+"Browser: available" has two independent paths to `available` — check both, in this order:
+
+1. **Playwright path**: if Playwright detection above is `available`, Browser is `available` with
+   `Browser backend: playwright`. `dev-agent:visual-qa` confirms browsers actually launch by running
+   the project's own Playwright tests.
+2. **Chrome DevTools MCP path**: only checked when the Playwright path is `unavailable`. If a
+   connected MCP server exposes browser-automation tools (recognized by tool name prefix — the
+   Chrome DevTools MCP server's tools, e.g. `mcp__chrome-devtools__*`), Browser is `available` with
+   `Browser backend: chrome-devtools-mcp`. This is read-only detection too — it never starts, pairs,
+   or configures an MCP server; it only checks whether one is already connected in this session.
+
+If neither path resolves, Browser is `unavailable` with `Browser backend: none`. The two backends
+are mutually exclusive per run — `visual-qa` uses whichever one detection found, never both.
 
 ## Report format
 
@@ -82,6 +91,7 @@ Frontend: <framework or "none">
 Backend: <framework or "none">
 Playwright: available | unavailable
 Browser: available | unavailable
+Browser backend: playwright | chrome-devtools-mcp | none
 Git: available | unavailable
 GitHub: available | unavailable
 Obsidian: available | unavailable
@@ -100,9 +110,12 @@ consults Obsidian (see `docs/obsidian-memory.md`), just not this capability list
   implements — the same way it already writes `tester`-runnable tests today. If Playwright is
   `unavailable`, it implements the UI without Playwright specs; regular tests (via `tester`) still
   apply.
-- **`dev-agent:visual-qa`**: only invoked when Playwright is `available` (see Stage selection in
-  `commands/implement.md`). It runs and inspects existing/newly-written Playwright tests — it does
-  not author new ones itself (it has no `Edit`/`Write`, matching every other read-only agent in
-  this plugin).
+- **`dev-agent:visual-qa`**: only invoked when Browser is `available` (see Stage selection in
+  `commands/implement.md`) — regardless of which backend. With the `playwright` backend it runs and
+  inspects existing/newly-written Playwright tests. With the `chrome-devtools-mcp` backend there are
+  no test files to run (that backend has no project-level test suite), so it drives the relevant
+  flows itself via the MCP server's tools (navigate, inspect, screenshot) and reports the same
+  evidence-based output. Either way it does not author new test files itself (it has no `Edit`/
+  `Write`, matching every other read-only agent in this plugin).
 - **Definition of Done**: Browser-based QA is `PASS` or `SKIPPED — capability unavailable`, never
   silently upgraded to `PASS` when it was actually skipped.

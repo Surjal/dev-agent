@@ -74,14 +74,16 @@ govern tool use there (native Claude Code behavior, not something this plugin ca
 What the plugin *does* control, and what travels with it to every project:
 
 - Each read-only agent (`researcher`, `tester`, `reviewer`, `architect`, `ux-designer`,
-  `visual-qa`) is defined with `tools: Read, Grep, Glob, Bash` in its frontmatter — no `Edit`/
+  `visual-qa`) is defined with `tools: Read, Grep, Glob, Bash` in its frontmatter (`visual-qa` also
+  gets `mcp__chrome-devtools__*`, for its second backend — see below) — no `Edit`/
   `Write` tool is granted to them at all. This is enforced by Claude Code itself, not by the
   agent's own judgment. Each of these agents is also explicitly instructed not to route around the
   missing tools via `Bash` shell redirection (`>`, `cp`, `sed -i`, etc.) — omitting Edit/Write only
   guarantees read-only behavior if the agent doesn't use Bash to write files instead, so the rule is
   written into every read-only agent's prompt, not just implied by the missing tools.
   `architect` and `ux-designer` produce specifications only — they never write application code.
-  `visual-qa` runs and inspects the project's existing Playwright tests — it never authors new
+  `visual-qa` runs and inspects the project's existing Playwright tests, or drives flows directly
+  via a connected Chrome DevTools MCP server when Playwright isn't available — it never authors new
   ones (that's `frontend-developer`'s job, same as it already writes `tester`-runnable tests).
 - `developer` and `frontend-developer` have `Edit`/`Write` — the only two agents that modify files.
 
@@ -177,7 +179,7 @@ recorded in `.devagent/.onboarded` and never asked again for that project.
 | `developer` | Implements the approved plan (backend/general), smallest correct diff, follows existing conventions | `Read, Edit, Write, Grep, Glob, Bash` |
 | `frontend-developer` | Implements the ux-designer's design system in the project's actual detected frontend stack — layouts, pages, components, all UI states, responsive, accessibility | `Read, Edit, Write, Grep, Glob, Bash` |
 | `tester` | Detects and runs the project's real test/build/lint tooling, verdicts PASS/FAIL | `Read, Grep, Glob, Bash` (no edit) |
-| `visual-qa` | Runs the project's existing Playwright tests, inspects screenshots/console/network evidence, checks functional/visual/responsive/UX-state/accessibility behavior in a real browser. Only invoked when Playwright is genuinely available. Never authors new test files. | `Read, Grep, Glob, Bash` (no edit) |
+| `visual-qa` | Runs the project's existing Playwright tests, or drives flows directly via a connected Chrome DevTools MCP server when Playwright isn't available; inspects screenshots/console/network evidence, checks functional/visual/responsive/UX-state/accessibility behavior in a real browser. Only invoked when Browser is genuinely available (either backend). Never authors new test files. | `Read, Grep, Glob, Bash, mcp__chrome-devtools__*` (no edit) |
 | `reviewer` | Senior-engineer review: correctness/architecture/security/performance/maintainability/testing, verdicts APPROVED/CHANGES REQUIRED | `Read, Grep, Glob, Bash` (no edit) |
 
 Once installed, these are namespaced subagents invoked via the native **`Agent` tool**'s
@@ -209,6 +211,27 @@ when UI is in scope but Playwright isn't.
 | `/test` | Run `tester` against the current working-tree changes |
 | `/review` | Run `reviewer` against the current working-tree changes |
 
+## Task types — how to move between them
+
+There's no flag to pick — `/implement` reads the task description and the target project's
+detected capabilities, then decides which stages actually run (`commands/implement.md` → Stage
+selection has the authoritative table). One command, five shapes:
+
+| Task shape | What triggers it | Stages that run |
+|---|---|---|
+| Trivial (typo, one-line fix, single obvious location) | Small, unambiguous, single-location change | `developer` → `tester` → `reviewer` |
+| Backend-only | Bug fix, migration, script, API-only change | `researcher` → `developer` → `tester` → `reviewer` |
+| Frontend, Browser available | UI change, Playwright or a connected Chrome DevTools MCP server present | `researcher` → `ux-designer` → `frontend-developer` → `tester` → `visual-qa` → `reviewer` |
+| Frontend, Browser unavailable | UI change, no browser-automation backend | Same as above minus `visual-qa` (reported as skipped, never silently) |
+| Full application | New project, or a feature big enough to need a real spec | `architect` → `researcher` → `ux-designer` → `developer` → `frontend-developer` → `tester` → `visual-qa` (if available) → `reviewer` |
+
+To move a task from one shape to another, change the request, not a flag — describing "a full user
+management system" instead of "add a delete button" is what pulls in `architect`/`ux-designer`; a
+one-line fix described as one stays Trivial. A run can also escalate mid-way (e.g. a Trivial task
+that turns out not to be trivial once `tester` fails) — see `commands/implement.md` → Trivial-task
+tier for exactly when that happens. `/analyze` and `/review` are unaffected by any of this — they're
+single-purpose (investigation-only, review-only) regardless of task shape.
+
 ## Examples
 
 **Laravel**
@@ -231,14 +254,15 @@ when UI is in scope but Playwright isn't.
 /analyze Analyze this project and identify three potential performance problems without modifying any files.
 ```
 
-**Frontend change, with real browser QA (only if the project has Playwright)**
+**Frontend change, with real browser QA (only if Browser capability is available)**
 ```
 /implement Fix the mobile nav menu -- it overflows the viewport on small screens.
 ```
 `researcher` → `ux-designer` → `frontend-developer` → `tester` → `visual-qa` (runs the project's
-existing Playwright tests at its own breakpoints, screenshots the actual failure) → `reviewer`. If
-the project has no Playwright, the same pipeline runs minus `visual-qa`, and the report says so
-explicitly instead of pretending browser QA happened.
+existing Playwright tests at its own breakpoints and screenshots the actual failure, or drives the
+flow directly via a connected Chrome DevTools MCP server if Playwright isn't available) →
+`reviewer`. If neither backend is available, the same pipeline runs minus `visual-qa`, and the
+report says so explicitly instead of pretending browser QA happened.
 
 **One-Shot Project Builder (new project or major feature)**
 ```
@@ -260,11 +284,11 @@ indexes), **Security** (auth enforcement, input validation, injection/XSS/CSRF, 
 secrets), **Quality** (tests pass, build passes, lint/type-check, reviewer findings addressed).
 
 Browser-based QA is always one of exactly two states: **`PASS`** (visual-qa genuinely ran and found
-nothing blocking) or **`SKIPPED — capability unavailable`** (Playwright wasn't available) — a skip
-is never silently upgraded to a pass. For a project where Playwright *is* available and UI changed,
-Browser-based QA is normally required (i.e. must genuinely run and pass) before final approval; for
-a backend-only task it isn't applicable at all. See `commands/implement.md` → Definition of Done
-for the full list.
+nothing blocking) or **`SKIPPED — capability unavailable`** (Browser wasn't available — neither
+Playwright nor a connected Chrome DevTools MCP server) — a skip is never silently upgraded to a
+pass. Where Browser *is* available and UI changed, Browser-based QA is normally required (i.e. must
+genuinely run and pass) before final approval; for a backend-only task it isn't applicable at all.
+See `commands/implement.md` → Definition of Done for the full list.
 
 ## Memory: Obsidian integration
 
@@ -397,15 +421,28 @@ See `CLAUDE.md` for the rules that govern development of this repo specifically.
 
 ## Roadmap
 
-- [x] Persistent execution context / resume (v1.4.0) — `.devagent/` inside the target project
-      (`state.json`, `plan.md`, `progress.md`, `decisions.md`, `failures.md`); `/implement --resume`
-      re-verifies the boundary and cross-checks state against the actual repository rather than
-      trusting it. See `docs/deep-execution.md`.
-- [ ] A second browser-automation backend for `visual-qa` (e.g. Chrome DevTools MCP), for
-      environments without Playwright but with a connected browser MCP server — the capability
-      model already treats "Browser" as separate from "Playwright" specifically to allow this
-      without redesigning `visual-qa` or `commands/implement.md`.
-- [ ] Semantic search over the Obsidian vault, if plain keyword search stops scaling (explicitly deferred for now)
+- [x] Complete / Verified — Persistent execution context / resume (v1.4.0) — `.devagent/` inside
+      the target project (`state.json`, `plan.md`, `progress.md`, `decisions.md`, `failures.md`);
+      `/implement --resume` re-verifies the boundary and cross-checks state against the actual
+      repository rather than trusting it. See `docs/deep-execution.md`.
+- [x] Implemented — live verification pending — A second browser-automation backend for
+      `visual-qa` — a connected Chrome DevTools MCP server satisfies "Browser: available" when
+      Playwright isn't (`Browser backend: chrome-devtools-mcp`). See `docs/capabilities.md` →
+      Browser detection, `agents/visual-qa.md`. The detection rule, capability-report field, and
+      `visual-qa` dual-backend contract are implemented and statically verified (`plugin validate
+      --strict`, boundary-guard suite, doc-consistency sweep all pass); a real end-to-end run —
+      an actual connected Chrome DevTools MCP server, a throwaway no-Playwright frontend project,
+      a live `/implement` pass confirming an actual `mcp__chrome-devtools__*` tool call — has not
+      been performed, since no such server is connected in any session so far. Do not treat this as
+      fully verified until that live run happens.
+- [x] Complete / Verified — Semantic search over the Obsidian vault — no vector store/embeddings
+      added (plugin ships no deps beyond one hook); implemented as a documented fallback strategy
+      (full-file semantic read when keyword search plausibly misses a synonymous entry or a brain
+      file's grown too large to skim), see `docs/obsidian-memory.md` → Search strategy. Live-tested
+      against the real vault (`D:\obsidian\brain\Patterns.md`, 539 lines): a keyword search for
+      "debounce" returned only unrelated noise, and the fallback correctly determined no matching
+      entry actually exists rather than trusting that noise. True RAG/vector retrieval over a
+      vault/codebase stays deferred below.
 - [ ] RAG-based retrieval for large codebases the researcher can't fully read in one pass
 - [ ] GitHub integration subagent (PRs, issues) via an MCP server
 - [ ] Database-schema-aware subagent for projects with migrations
