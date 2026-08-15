@@ -93,7 +93,10 @@ anyone developing the repo.
 - Never hide or soften a test failure to make progress look better than it is.
 - Never install Playwright, download browser binaries, or edit `package.json` because Playwright is
   missing — "unavailable" is a normal capability-detection result, not a problem to fix on the
-  target project's behalf. See `docs/capabilities.md`.
+  target project's behalf. See `docs/capabilities.md`. The sole exception is the one-time,
+  per-project First-run setup check (`docs/first-run-setup.md`), which may install Playwright, but
+  only after explicit user confirmation on the first `/implement`/`/analyze` run for that project —
+  never silently, never again after that first ask.
 
 ## Memory
 

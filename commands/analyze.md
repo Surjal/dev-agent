@@ -6,6 +6,12 @@ Use the `dev-agent:researcher` subagent — call the `Agent` tool with `subagent
 
 $ARGUMENTS
 
+Before anything else, check `.devagent/.onboarded` in the target project (create `.devagent/` if it
+doesn't exist yet). If the marker is missing, this is the first `/implement` or `/analyze` run for
+this project — run the one-time Playwright/Obsidian setup check in `docs/first-run-setup.md`, then
+write the marker, before continuing. If it already exists, skip silently — never re-ask. This is the
+only file `/analyze` ever writes; everything else about this command remains investigation-only.
+
 Before delegating, briefly state what stack/framework you expect this project to use and why (based on marker files), so the researcher's findings can be sanity-checked against it.
 
 If relevant to the request, check the user's Obsidian vault for historical context first — see

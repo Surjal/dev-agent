@@ -151,10 +151,13 @@ The one with real behavioral consequences is Playwright, so it's the most conser
 "available" means the **target project itself** already depends on it (its own `package.json`/
 `playwright.config.*`) *and* the package genuinely resolves in `node_modules` — never because
 Playwright happens to be cached or installed somewhere else on the development machine. This
-plugin **never** installs Playwright, never downloads browser binaries, and never edits
-`package.json` in reaction to Playwright being missing; "unavailable" is a normal, expected result
-for most projects, treated the same as "this project has no frontend" — a fact to route around, not
-an error to fix on the project's behalf.
+plugin's capability detection **never** installs Playwright, never downloads browser binaries, and
+never edits `package.json` in reaction to Playwright being missing; "unavailable" is a normal,
+expected result for most projects, treated the same as "this project has no frontend" — a fact to
+route around, not an error to fix on the project's behalf. The sole exception is the one-time,
+per-project First-run setup check (`docs/first-run-setup.md`), which may install Playwright, but
+only after explicit user confirmation the first time `/implement`/`/analyze` runs against a given
+project — never again after that.
 
 "Browser" is listed as its own capability, separate from Playwright, on purpose: for the current
 implementation it's derived 1:1 from Playwright (there's no other browser-automation path wired

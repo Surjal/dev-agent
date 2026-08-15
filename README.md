@@ -151,9 +151,16 @@ Obsidian: available
 The one with real behavioral consequences is Playwright: it's "available" only when the **target
 project itself** already depends on it (`package.json`/`playwright.config.*`) *and* the package
 actually resolves in `node_modules` — never because Playwright happens to be cached or installed
-somewhere else on the machine. dev-agent **never** installs Playwright, never downloads browser
-binaries, and never edits `package.json` just because Playwright is missing — a project without it
-is a normal, expected result, not an error condition. Full detection rules: `docs/capabilities.md`.
+somewhere else on the machine. Detection itself **never** installs Playwright, never downloads
+browser binaries, and never edits `package.json` just because Playwright is missing — a project
+without it is a normal, expected result, not an error condition. Full detection rules:
+`docs/capabilities.md`.
+
+The one exception: the first time `/implement` or `/analyze` runs against a project, a one-time
+setup check (`docs/first-run-setup.md`) asks — once, explicitly, per project — whether to install
+Playwright if the project has a frontend but none configured, and whether to point dev-agent at an
+Obsidian vault if the default (`D:\obsidian`) isn't reachable. The answer (including "skip") is
+recorded in `.devagent/.onboarded` and never asked again for that project.
 
 ## Agents
 
@@ -286,6 +293,16 @@ Full protocol, exact formats, and edge cases: `docs/obsidian-memory.md`. No vect
 embeddings, or external database is introduced by this — plain Markdown, read/grepped directly, is
 the first memory layer; semantic search is a possible later addition, not part of this.
 
+## OpenCode port
+
+An experimental OpenCode port lives under `.opencode/` — same 8 agents, same 4 commands, same
+tier logic (Trivial/Medium/Large), same `.devagent/state.json` + `.devagent/handoffs/*.md` formats,
+translated onto OpenCode's native agent/command/plugin mechanisms instead of Claude Code's
+`Agent`/`Skill`/hook system. The Claude Code plugin above remains the reference implementation —
+this is a parallel, independently loaded adapter, not a replacement. See `docs/opencode-port.md`
+for the full Claude → OpenCode mapping, known limitations (notably the boundary-guard plugin's
+weaker fail-closed guarantee compared to the Claude Code hook), and verification status.
+
 ## Troubleshooting
 
 **`/analyze` or `/implement` isn't recognized** — confirm the plugin is enabled: `claude plugin
@@ -354,10 +371,15 @@ dev-agent/
 │   ├── obsidian-memory.md    # full Obsidian integration protocol
 │   ├── capabilities.md       # full capability-detection reference (Playwright, etc.)
 │   ├── project-boundary.md   # full target-project-boundary reference
+│   ├── first-run-setup.md    # one-time per-project Playwright/Obsidian onboarding check
 │   └── deep-execution.md     # Deep Mode, stages, persistent state, resume, failure recovery
 ├── memory/                # notes about developing THIS plugin (not shipped)
 ├── workspace/sample-project/  # optional local dogfood fixture, gitignored
-└── .claude/settings.json  # permissions for sessions working ON this repo only
+├── .claude/settings.json  # permissions for sessions working ON this repo only
+└── .opencode/             # experimental OpenCode port — see OpenCode port section above
+    ├── agents/            # 8 agents, OpenCode's native format
+    ├── commands/          # 4 commands
+    └── plugins/           # project-boundary-guard.js
 ```
 
 After any change to `agents/` or `commands/`, validate the manifest:
