@@ -123,7 +123,8 @@ function realpathDeepest(p, strict) {
   }
 }
 
-const VAULT_EXCEPTIONS = ['d:/obsidian/work/active', 'd:/obsidian/brain'];
+const HOME = require('node:os').homedir();
+const VAULT_EXCEPTIONS = [HOME + '/obsidian/work/active', HOME + '/obsidian/brain', 'd:/obsidian/work/active', 'd:/obsidian/brain'].map(norm);
 
 function isVaultException(target) {
   const t = norm(target);
@@ -191,6 +192,8 @@ function isNullDeviceToken(token) {
 }
 
 function checkBashCommand(command, cwdReal, root) {
+  // expand ~ and $HOME so home paths are checked as the real paths they are
+  command = command.replace(/(^|[\s"'=])(~|\$HOME|\$\{HOME\})(?=\/)/g, (_, pre) => pre + HOME);
   // An explicit cd outside the root is blocked outright: after it, later relative paths in the
   // same command would resolve against a directory this guard did not verify.
   let m;
